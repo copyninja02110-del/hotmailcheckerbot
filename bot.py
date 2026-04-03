@@ -1,39 +1,38 @@
-import asyncio, aiofiles, time, uuid, os, random
+import asyncio
+import aiofiles
+import time
+import uuid
+import os
+import random
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message, FSInputFile, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command
-from collections import defaultdict, deque
+from collections import defaultdict
 
-BOT_TOKEN = "8646480993:AAHy3RSUzm6bcPmbzh9c4bqsuAIXLZtcniY"
+# ===== CONFIG =====
+BOT_TOKEN = os.getenv("8646480993:AAHy3RSUzm6bcPmbzh9c4bqsuAIXLZtcniY")
 ADMIN_ID = 8646480993
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ===== SYSTEM =====
+# ===== GLOBAL =====
 task_queue = asyncio.Queue()
-retry_queue = asyncio.Queue()
-user_stats = defaultdict(lambda: {
-    "checked": 0,
-    "valid": 0,
-    "invalid": 0,
-    "retry": 0
-})
+user_stats = defaultdict(lambda: {"checked": 0, "valid": 0, "invalid": 0, "retry": 0})
 
-WORKERS = 20
-PROXIES = []
+WORKERS = 10
 
-# ===== LOAD PROXIES =====
-def load_proxies():
-    global PROXIES
-    if os.path.exists("proxies.txt"):
-        with open("proxies.txt") as f:
-            PROXIES = [x.strip() for x in f if x.strip()]
-
-def get_proxy():
-    if not PROXIES:
-        return None
-    return random.choice(PROXIES)
+# ===== SERVICES =====
+services = {
+    "Netflix": "netflix.txt",
+    "Spotify": "spotify.txt",
+    "Amazon": "amazon.txt",
+    "Facebook": "facebook.txt",
+    "Instagram": "instagram.txt",
+    "PayPal": "paypal.txt",
+    "Steam": "steam.txt",
+    "Discord": "discord.txt"
+}
 
 # ===== KEYBOARD =====
 def kb():
@@ -48,47 +47,103 @@ def kb():
 # ===== START =====
 @dp.message(Command("start"))
 async def start(msg: Message):
-    await msg.answer("🔥 ULTRA Checker Online", reply_markup=kb())
+    await msg.answer("🔥 ULTRA CHECKER READY", reply_markup=kb())
 
-# ===== SERVICE DETECTION =====
-services = {
-    "Netflix": "netflix.txt",
-    "Spotify": "spotify.txt",
-    "Amazon": "amazon.txt",
-    "Facebook": "facebook.txt"
-}
+# ===== LOADING ANIMATION =====
+async def loading_animation(msg):
+    steps = [
+        "🔄 Sistem başlatılıyor...",
+        "⚡ Proxy bağlanıyor...",
+        "📡 Sunucuya bağlanıyor...",
+        "🔍 Combo analiz ediliyor...",
+        "🚀 Başlatılıyor..."
+    ]
 
-async def save_service(service, combo):
+    m = await msg.answer("⚡ Starting...")
+
+    for step in steps:
+        await asyncio.sleep(1)
+        await m.edit_text(step)
+
+    await asyncio.sleep(1)
+    await m.delete()
+
+# ===== PROGRESS BAR =====
+def progress_bar(current, total, length=20):
+    percent = current / total if total else 0
+    filled = int(length * percent)
+    bar = "█" * filled + "░" * (length - filled)
+    return f"[{bar}] {int(percent*100)}%"
+
+# ===== LIVE STATUS =====
+async def live_status(msg, task_id, stats, total):
+    m = await msg.answer("⚡ Starting panel...")
+
+    start_time = time.time()
+
+    while stats["running"]:
+        elapsed = time.time() - start_time
+        checked = stats["checked"]
+
+        cpm = int((checked / elapsed) * 60) if elapsed > 0 else 0
+        bar = progress_bar(checked, total)
+
+        text = f"""
+⚡ TASK ID: {task_id}
+
+📊 Progress:
+{bar}
+
+📈 Checked: {checked}/{total}
+🔥 CPM: {cpm}
+
+✅ Hits: {stats['valid']}
+❌ Bad: {stats['invalid']}
+🔁 Retry: {stats['retry']}
+"""
+        try:
+            await m.edit_text(text)
+        except:
+            pass
+
+        await asyncio.sleep(2)
+
+# ===== SAVE SERVICE =====
+async def save_account(service, combo):
     if not os.path.exists("Accounts"):
         os.makedirs("Accounts")
 
     async with aiofiles.open(f"Accounts/{services[service]}", "a") as f:
         await f.write(combo + "\n")
 
+# ===== DETECT SERVICES =====
 def detect_services(email):
-    result = []
-    if "netflix" in email: result.append("Netflix")
-    if "spotify" in email: result.append("Spotify")
-    if "amazon" in email: result.append("Amazon")
-    if "fb" in email: result.append("Facebook")
-    return result
+    found = []
+    for s in services:
+        if s.lower() in email.lower():
+            found.append(s)
+    return found
 
-# ===== CORE CHECK (SIMULATED ENGINE) =====
-async def check_combo(combo):
-    await asyncio.sleep(0.01)  # simulate delay
+# ===== HIT FORMAT =====
+async def send_hit(msg, email, password, services_found, total_hits):
+    services_text = "\n".join([f"✔ {s}" for s in services_found]) if services_found else "✖ None"
 
-    if ":" not in combo:
-        return "invalid"
+    text = f"""
+🔱 HOTMAİL HİT BULUNDU 🔱
+⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊
+📧 Email: {email}
+🔑 Password: {password}
+👤 Name: User
+🌍 Country: 🇩🇪 DE
+⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊
+🔗 EMAIL IN INBOX:
+{services_text}
 
-    email, password = combo.split(":", 1)
-
-    if len(password) < 6:
-        return "retry"
-
-    if "@" not in email:
-        return "invalid"
-
-    return "valid"
+📊 Toplam Hit: {total_hits}
+⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊
+𝑷𝑹𝑶𝑮𝑹𝑨𝑴 : @YourBot
+"""
+    await msg.answer(text)
 
 # ===== PROCESS =====
 async def process(task):
@@ -97,40 +152,42 @@ async def process(task):
     msg = task["msg"]
     task_id = task["task_id"]
 
-    start = time.time()
+    stats = {"checked": 0, "valid": 0, "invalid": 0, "retry": 0, "running": True}
+    total = len(combos)
 
-    for i, combo in enumerate(combos):
-        proxy = get_proxy()
+    asyncio.create_task(live_status(msg, task_id, stats, total))
+    await loading_animation(msg)
 
-        try:
-            result = await check_combo(combo)
+    for combo in combos:
+        if ":" not in combo:
+            stats["invalid"] += 1
+            stats["checked"] += 1
+            continue
 
-            if result == "valid":
-                user_stats[user_id]["valid"] += 1
+        email, password = combo.split(":", 1)
 
-                for s in detect_services(combo):
-                    await save_service(s, combo)
+        detected = detect_services(email)
 
-            elif result == "retry":
-                user_stats[user_id]["retry"] += 1
-                await retry_queue.put(combo)
+        for s in detected:
+            await save_account(s, combo)
 
-            else:
-                user_stats[user_id]["invalid"] += 1
+        if len(password) >= 6:
+            stats["valid"] += 1
 
-            user_stats[user_id]["checked"] += 1
+            await send_hit(
+                msg,
+                email,
+                password,
+                detected,
+                stats["valid"]
+            )
+        else:
+            stats["retry"] += 1
 
-        except:
-            await retry_queue.put(combo)
+        stats["checked"] += 1
 
-        # CPM
-        elapsed = time.time() - start
-        cpm = int((i / elapsed) * 60) if elapsed > 0 else 0
-
-        if i % 50 == 0:
-            await msg.answer(f"⚡ {task_id}\n{i}/{len(combos)}\nCPM: {cpm}")
-
-    await msg.answer("✅ Task Done")
+    stats["running"] = False
+    await msg.answer("✅ TASK COMPLETED")
 
 # ===== WORKER =====
 async def worker():
@@ -139,22 +196,9 @@ async def worker():
         await process(task)
         task_queue.task_done()
 
-# ===== RETRY WORKER =====
-async def retry_worker():
-    while True:
-        combo = await retry_queue.get()
-        await asyncio.sleep(1)
-        await task_queue.put({
-            "user_id": 0,
-            "combos": [combo],
-            "msg": None,
-            "task_id": "retry"
-        })
-        retry_queue.task_done()
-
 # ===== FILE HANDLER =====
 @dp.message(lambda m: m.document)
-async def file_handler(msg: Message):
+async def handle_file(msg: Message):
     file = await bot.get_file(msg.document.file_id)
     path = file.file_path
     data = await bot.download_file(path)
@@ -181,13 +225,12 @@ async def stats(msg: Message):
 📊 Stats
 Checked: {s['checked']}
 Valid: {s['valid']}
-Retry: {s['retry']}
 """)
 
 # ===== QUEUE =====
 @dp.message(lambda m: m.text == "⚡ Queue")
 async def queue(msg: Message):
-    await msg.answer(f"Queue: {task_queue.qsize()} | Retry: {retry_queue.qsize()}")
+    await msg.answer(f"Queue: {task_queue.qsize()}")
 
 # ===== ADMIN =====
 @dp.message(Command("admin"))
@@ -198,14 +241,10 @@ async def admin(msg: Message):
 
 # ===== MAIN =====
 async def main():
-    load_proxies()
-
     for _ in range(WORKERS):
         asyncio.create_task(worker())
 
-    asyncio.create_task(retry_worker())
-
-    print("🚀 ULTRA RUNNING")
+    print("🚀 ULTRA BOT RUNNING")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
