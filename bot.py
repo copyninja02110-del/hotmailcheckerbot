@@ -15,8 +15,20 @@ from colorama import Fore, Style, init
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 
-# ====================== BOT TOKEN ======================
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"   # ← CHANGE THIS TO YOUR BOT TOKEN
+# ====================== BOT TOKEN FROM RAILWAY ======================
+TOKEN = os.getenv("TOKEN")
+
+if not TOKEN:
+    print("❌ CRITICAL ERROR: TOKEN environment variable is not set!")
+    print("Go to Railway → Variables → Add TOKEN=your_real_bot_token")
+    sys.exit(1)
+
+if TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE" or "YOUR_TELEGRAM" in TOKEN:
+    print("❌ ERROR: You are still using the placeholder token!")
+    print("Please set your REAL bot token in Railway Variables.")
+    sys.exit(1)
+
+print(f"✅ Token loaded successfully! Bot starting...")
 
 # ====================== GLOBAL COUNTERS ======================
 lock = threading.Lock()
