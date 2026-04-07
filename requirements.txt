@@ -1,2 +1,4 @@
-aiogram
-aiofiles
+requests==2.32.3
+python-telegram-bot==21.4
+colorama==0.4.6
+pycountry==24.6.1
