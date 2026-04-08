@@ -16,6 +16,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 
 from services import services
 
+# ====================== BOT TOKEN ======================
 TOKEN = os.getenv("TOKEN")
 if not TOKEN or TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
     print("❌ TOKEN set nahi hai! Railway Variables mein TOKEN daal do.")
