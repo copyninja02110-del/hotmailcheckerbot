@@ -18,7 +18,7 @@ from services import services
 
 TOKEN = os.getenv("TOKEN")
 if not TOKEN or TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
-    print("❌ TOKEN set nahi hai! Railway Variables mein TOKEN daal do.")
+    print("❌ TOKEN set nahi hai!")
     sys.exit(1)
 
 print("✅ Token loaded! Video style bot starting...")
@@ -52,10 +52,11 @@ def send_message_safe(bot, chat_id, text, parse_mode='HTML'):
     try:
         bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
     except Exception as e:
-        print(f"Send message error: {e}")
+        print(f"[ERROR] Send message failed: {e}")
 
 def update_progress_message(bot, chat_id):
     global progress_message_id
+    print("[INFO] Progress bar thread started")
     while processed < total_combos and total_combos > 0:
         with lock:
             pct = min((processed / total_combos * 100), 100)
@@ -77,8 +78,9 @@ def update_progress_message(bot, chat_id):
             else:
                 sent = bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
                 progress_message_id = sent.message_id
-        except:
-            pass
+                print(f"[INFO] Progress message created with ID: {progress_message_id}")
+        except Exception as e:
+            print(f"[ERROR] Progress update failed: {e}")
         time.sleep(5)
 
 def get_flag(country_name):
@@ -376,7 +378,9 @@ async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['threads'] = threads
         await update.message.reply_text(f"🚀 Added to Queue! Position #1\nScanning will start automatically...")
 
-        threading.Thread(target=run_checker, args=(context.bot, update.effective_chat.id, threads), daemon=True).start()
+        # FIXED: Direct thread start with print for debugging
+        print(f"[INFO] Starting checker thread with {threads} threads")
+        threading.Thread(target=run_checker, args=(context.bot, update.effective_chat.id, threads), daemon=False).start()
         return ConversationHandler.END
     except:
         await update.message.reply_text("❌ Valid number (1-1000) bhejo")
@@ -384,6 +388,7 @@ async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def run_checker(bot, chat_id, threads):
     global total_combos, processed, hit, bad, retry, linked_accounts, progress_message_id
+    print("[INFO] run_checker started - checking will begin now")
     hit = bad = retry = processed = 0
     linked_accounts.clear()
     checked_accounts.clear()
@@ -408,6 +413,7 @@ def run_checker(bot, chat_id, threads):
 
     time.sleep(5)
     send_message_safe(bot, chat_id, f"✅ Check Completed!\nTotal Hits: {hit} | Bad: {bad} | Retries: {retry}")
+    print("[INFO] run_checker finished")
 
 def main():
     if not os.path.exists("Accounts"):
@@ -426,7 +432,7 @@ def main():
     )
     
     app.add_handler(conv_handler)
-    print("🤖 KAKASHI Hotmail Checker (FULL VIDEO STYLE - FIXED) is running... Send /start")
+    print("🤖 KAKASHI Hotmail Checker (FINAL FIXED) is running... Send /start")
     app.run_polling()
 
 if __name__ == "__main__":
