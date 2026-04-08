@@ -26,7 +26,7 @@ if not TOKEN:
 
 print(f"✅ Token loaded successfully! Bot starting...")
 
-# ====================== GLOBAL COUNTERS & SELECTED SERVICES ======================
+# ====================== GLOBAL COUNTERS ======================
 lock = threading.Lock()
 hit = 0
 bad = 0
@@ -36,10 +36,11 @@ processed = 0
 linked_accounts = {}
 checked_accounts = set()
 rate_limit_semaphore = Semaphore(500)
+progress_message_id = None
 
 init(autoreset=True)
 
-# Category wise services (same)
+# Category wise services
 CATEGORIES = {
     "Social Media": ["Facebook", "Instagram", "TikTok", "Twitter", "LinkedIn", "Pinterest", "Reddit", "Snapchat", "VK", "WeChat"],
     "Messaging": ["WhatsApp", "Telegram", "Discord", "Signal", "Line"],
@@ -48,6 +49,39 @@ CATEGORIES = {
     "Payment & Finance": ["PayPal", "Binance", "Coinbase", "Kraken", "Bitfinex", "OKX", "Bybit", "Bitkub", "Revolut", "TransferWise", "Venmo", "Cash App"],
     "Gaming": ["Steam", "Xbox", "PlayStation", "EpicGames", "Rockstar", "EA Sports", "Ubisoft", "Blizzard", "Riot Games", "Valorant", "Genshin Impact", "PUBG", "Free Fire", "Mobile Legends", "Call of Duty", "Fortnite", "Roblox", "Minecraft", "Supercell", "Nintendo"],
 }
+
+# ====================== ANIMATED PROGRESS BAR (Video Style) ======================
+def create_progress_bar(percentage, length=25):
+    filled = int(length * percentage / 100)
+    bar = "█" * filled + "░" * (length - filled)
+    return f"[{bar}] {percentage:.1f}%"
+
+async def update_progress_message(context, chat_id):
+    global progress_message_id
+    while processed < total_combos and total_combos > 0:
+        with lock:
+            progress_pct = min((processed / total_combos * 100), 100)
+            bar = create_progress_bar(progress_pct)
+            linked_total = sum(linked_accounts.values())
+            msg = f"""
+🔄 <b>LIVE PROGRESS</b>
+{bar}
+
+📊 {processed}/{total_combos} combos checked
+✅ Hits: {hit}
+❌ Bad: {bad}
+🔄 Retries: {retry}
+🔗 Linked Services: {linked_total}
+"""
+        try:
+            if progress_message_id:
+                await context.bot.edit_message_text(chat_id=chat_id, message_id=progress_message_id, text=msg, parse_mode='HTML')
+            else:
+                sent = await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
+                progress_message_id = sent.message_id
+        except:
+            pass
+        time.sleep(6)
 
 # ====================== HELPER FUNCTIONS ======================
 def get_flag(country_name):
@@ -195,35 +229,7 @@ def check_combo(email, password, context, update):
                 retry += 1
             processed += 1
 
-# ====================== ANIMATED PROGRESS BAR ======================
-def create_progress_bar(percentage, length=20):
-    filled = int(length * percentage / 100)
-    bar = "█" * filled + "░" * (length - filled)
-    return f"[{bar}] {percentage:.1f}%"
-
-def live_progress(context, update):
-    while processed < total_combos and total_combos > 0:
-        with lock:
-            progress_pct = min((processed / total_combos * 100), 100)
-            bar = create_progress_bar(progress_pct)
-            linked_total = sum(linked_accounts.values())
-            msg = f"""
-🔄 <b>LIVE PROGRESS</b>
-{bar}
-
-📊 {processed}/{total_combos} combos
-✅ Hits: {hit}
-❌ Bad: {bad}
-🔄 Retries: {retry}
-🔗 Linked: {linked_total}
-"""
-        try:
-            context.bot.send_message(update.effective_chat.id, msg, parse_mode='HTML')
-        except:
-            pass
-        time.sleep(8)
-
-# ====================== SERVICE SELECTION (same as before) ======================
+# ====================== SERVICE SELECTION (Video Style) ======================
 def category_keyboard():
     keyboard = [
         [InlineKeyboardButton("📱 Social Media", callback_data="cat_Social Media")],
@@ -251,8 +257,10 @@ def service_keyboard(category, selected):
 SELECT_CATEGORY, UPLOAD_COMBO, ENTER_THREADS = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global progress_message_id
+    progress_message_id = None
     context.user_data['selected_services'] = set()
-    await update.message.reply_text("🔥 <b>KAKASHI Hotmail MFC V7</b>\n\nPehle services select karo:", parse_mode='HTML', reply_markup=category_keyboard())
+    await update.message.reply_text("🔥 <b>KAKASHI Hotmail MFC V7</b>\n\nSelect services first:", parse_mode='HTML', reply_markup=category_keyboard())
     return SELECT_CATEGORY
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -264,7 +272,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("cat_"):
         category = data[4:]
         context.user_data['current_category'] = category
-        await query.edit_message_text(f"📌 {category} services:\nSelect karo:", reply_markup=service_keyboard(category, selected))
+        await query.edit_message_text(f"📌 {category} Services:\nChoose which ones to check:", reply_markup=service_keyboard(category, selected))
 
     elif data.startswith("svc_"):
         service = data[4:]
@@ -274,30 +282,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             selected.add(service)
         context.user_data['selected_services'] = selected
         category = context.user_data.get('current_category')
-        await query.edit_message_text(f"📌 {category} services:\nSelect karo:", reply_markup=service_keyboard(category, selected))
+        await query.edit_message_text(f"📌 {category} Services:\nChoose which ones to check:", reply_markup=service_keyboard(category, selected))
 
     elif data.startswith("select_all_in_"):
         category = data[14:]
         for srv in CATEGORIES[category]:
             selected.add(srv)
         context.user_data['selected_services'] = selected
-        await query.edit_message_text(f"📌 {category} services:\nSelect karo:", reply_markup=service_keyboard(category, selected))
+        await query.edit_message_text(f"📌 {category} Services:\nChoose which ones to check:", reply_markup=service_keyboard(category, selected))
 
     elif data == "select_all":
         for cat_services in CATEGORIES.values():
             selected.update(cat_services)
         context.user_data['selected_services'] = selected
-        await query.edit_message_text("🌐 All services selected!\nAb combo file bhejo.", reply_markup=None)
+        await query.edit_message_text("🌐 All services have been selected!\nNow send your combo file (.txt)", reply_markup=None)
         return UPLOAD_COMBO
 
     elif data == "back_to_cat":
-        await query.edit_message_text("🔥 Services select karo:", reply_markup=category_keyboard())
+        await query.edit_message_text("🔥 Select services:", reply_markup=category_keyboard())
 
     elif data == "done_selection":
         if not selected:
-            await query.edit_message_text("⚠️ At least 1 service select karo!", reply_markup=category_keyboard())
+            await query.edit_message_text("⚠️ Please select at least 1 service!", reply_markup=category_keyboard())
             return SELECT_CATEGORY
-        await query.edit_message_text(f"✅ {len(selected)} services selected!\nAb combo file (.txt) bhejo.")
+        await query.edit_message_text(f"✅ {len(selected)} services selected!\nNow send your combo file (.txt)")
         return UPLOAD_COMBO
 
     return SELECT_CATEGORY
@@ -307,9 +315,9 @@ async def receive_combo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file = await update.message.document.get_file()
         await file.download_to_drive("combo.txt")
         context.user_data['combo_file'] = "combo.txt"
-        await update.message.reply_text("✅ Combo received!\n\nThreads number bhejo (20-500 recommended):")
+        await update.message.reply_text("✅ Combo file received!\n\nSend number of threads (20-500 recommended):")
         return ENTER_THREADS
-    await update.message.reply_text("Please send .txt combo file!")
+    await update.message.reply_text("Please send combo as .txt file!")
     return UPLOAD_COMBO
 
 async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -318,26 +326,27 @@ async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not 1 <= threads <= 1000:
             raise ValueError
         context.user_data['threads'] = threads
-        await update.message.reply_text(f"🚀 Starting with {threads} threads...\nLive animated progress bar on!")
+        await update.message.reply_text(f"🚀 Starting check with {threads} threads...\nAnimated live progress bar activated!")
         threading.Thread(target=run_checker, args=(context, update), daemon=True).start()
         return ConversationHandler.END
     except:
-        await update.message.reply_text("❌ Valid number (1-1000) bhejo")
+        await update.message.reply_text("❌ Please send a valid number (1-1000)")
         return ENTER_THREADS
 
 def run_checker(context, update):
-    global total_combos, processed, hit, bad, retry, linked_accounts
+    global total_combos, processed, hit, bad, retry, linked_accounts, progress_message_id
     hit = bad = retry = processed = 0
     linked_accounts.clear()
     checked_accounts.clear()
+    progress_message_id = None
 
     with open("combo.txt", "r", encoding="utf-8", errors="ignore") as f:
         lines = [line.strip() for line in f if ":" in line]
     total_combos = len(lines)
 
-    context.bot.send_message(update.effective_chat.id, f"📊 Total combos: {total_combos}\nStarting check...")
+    context.bot.send_message(update.effective_chat.id, f"📊 Total combos loaded: {total_combos}\nStarting check...")
 
-    threading.Thread(target=live_progress, args=(context, update), daemon=True).start()
+    threading.Thread(target=update_progress_message, args=(context, update.effective_chat.id), daemon=True).start()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=context.user_data.get('threads', 50)) as executor:
         for line in lines:
@@ -368,7 +377,7 @@ def main():
     )
     
     app.add_handler(conv_handler)
-    print("🤖 KAKASHI Bot with Animated Progress Bar is running... Send /start")
+    print("🤖 KAKASHI Bot (Video Style) is running... Send /start")
     app.run_polling()
 
 if __name__ == "__main__":
