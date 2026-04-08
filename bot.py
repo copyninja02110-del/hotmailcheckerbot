@@ -18,7 +18,7 @@ from services import services
 
 TOKEN = os.getenv("TOKEN")
 if not TOKEN or TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
-    print("❌ TOKEN set nahi hai!")
+    print("❌ TOKEN set nahi hai! Railway Variables mein TOKEN daal do.")
     sys.exit(1)
 
 print("✅ Token loaded! Video style bot starting...")
@@ -50,7 +50,12 @@ def create_progress_bar(percentage, length=25):
 
 def send_message_safe(bot, chat_id, text, parse_mode='HTML'):
     try:
-        bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+        loop = asyncio.get_event_loop()
+        future = asyncio.run_coroutine_threadsafe(
+            bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode),
+            loop
+        )
+        future.result(timeout=10)
     except Exception as e:
         print(f"[ERROR] Send message failed: {e}")
 
@@ -73,10 +78,19 @@ def update_progress_message(bot, chat_id):
 🔗 LINKED: {linked}
 """
         try:
+            loop = asyncio.get_event_loop()
             if progress_message_id:
-                bot.edit_message_text(chat_id=chat_id, message_id=progress_message_id, text=msg, parse_mode='HTML')
+                future = asyncio.run_coroutine_threadsafe(
+                    bot.edit_message_text(chat_id=chat_id, message_id=progress_message_id, text=msg, parse_mode='HTML'),
+                    loop
+                )
+                future.result(timeout=10)
             else:
-                sent = bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
+                future = asyncio.run_coroutine_threadsafe(
+                    bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML'),
+                    loop
+                )
+                sent = future.result(timeout=10)
                 progress_message_id = sent.message_id
                 print(f"[INFO] Progress message created with ID: {progress_message_id}")
         except Exception as e:
@@ -225,8 +239,7 @@ def validate_combo(file_path):
     with open(file_path, "w", encoding="utf-8") as f:
         f.write("\n".join(valid) + "\n")
     return len(valid)
-
-def main_menu_keyboard():
+    def main_menu_keyboard():
     keyboard = [
         [InlineKeyboardButton("🚀 Start Checking", callback_data="start_checking")],
         [InlineKeyboardButton("🔑 Keywords", callback_data="menu_keywords"), InlineKeyboardButton("⚡ Speed", callback_data="menu_speed")],
@@ -378,9 +391,8 @@ async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['threads'] = threads
         await update.message.reply_text(f"🚀 Added to Queue! Position #1\nScanning will start automatically...")
 
-        # FIXED: Direct thread start with print for debugging
         print(f"[INFO] Starting checker thread with {threads} threads")
-        threading.Thread(target=run_checker, args=(context.bot, update.effective_chat.id, threads), daemon=False).start()
+        threading.Thread(target=run_checker, args=(context.bot, update.effective_chat.id, threads), daemon=True).start()
         return ConversationHandler.END
     except:
         await update.message.reply_text("❌ Valid number (1-1000) bhejo")
