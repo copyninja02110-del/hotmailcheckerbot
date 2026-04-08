@@ -239,8 +239,8 @@ def validate_combo(file_path):
     with open(file_path, "w", encoding="utf-8") as f:
         f.write("\n".join(valid) + "\n")
     return len(valid)
-    
-    def main_menu_keyboard():
+
+def main_menu_keyboard():
     keyboard = [
         [InlineKeyboardButton("🚀 Start Checking", callback_data="start_checking")],
         [InlineKeyboardButton("🔑 Keywords", callback_data="menu_keywords"), InlineKeyboardButton("⚡ Speed", callback_data="menu_speed")],
