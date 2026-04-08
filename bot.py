@@ -1,4 +1,3 @@
-# ====================== bot.py ======================
 import os
 import sys
 import time
@@ -427,7 +426,7 @@ def main():
     )
     
     app.add_handler(conv_handler)
-    print("🤖 KAKASHI Hotmail Checker (FULL VIDEO STYLE) is running... Send /start")
+    print("🤖 KAKASHI Hotmail Checker (FULL VIDEO STYLE - FIXED) is running... Send /start")
     app.run_polling()
 
 if __name__ == "__main__":
