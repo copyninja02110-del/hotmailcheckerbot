@@ -9,11 +9,12 @@ from checker import HotmailChecker
 
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
-    print("❌ TOKEN set nahi hai!")
+    print("❌ TOKEN set nahi hai! Railway Variables mein TOKEN daal do.")
     sys.exit(1)
 
 print("✅ Token loaded! Bot starting...")
 
+# ================== CATEGORIES FOR KEYWORDS ==================
 CATEGORIES = {
     "Gaming": ["Steam", "Xbox", "PlayStation", "Epic Games", "Rockstar", "EA Sports", "Ubisoft", "Blizzard", "Riot Games", "Valorant", "Genshin Impact", "PUBG", "Free Fire", "Mobile Legends", "Call of Duty", "Fortnite", "Roblox", "Minecraft", "Supercell", "Nintendo"],
     "Streaming": ["Netflix", "Spotify", "Twitch", "YouTube", "Disney+", "Hulu", "Amazon Prime"],
@@ -24,7 +25,7 @@ CATEGORIES = {
 }
 
 user_data = {}
-SELECT_CATEGORY, UPLOAD_COMBO, ENTER_THREADS = range(3)
+SELECT_CATEGORY, UPLOAD_COMBO = range(2)   # Threads step remove kiya
 
 def main_menu_keyboard():
     keyboard = [
@@ -155,10 +156,18 @@ async def receive_combo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await file.download_to_drive("combo.txt")
         valid_count = validate_combo("combo.txt")
         context.user_data['combo_file'] = "combo.txt"
-        await update.message.reply_text(f"✅ Combo received! {valid_count} valid lines.\n\nChecking will start automatically with 200 threads...")
-        # Default 200 threads — user ko select nahi karne denge
-        threading.Thread(target=run_checker, args=(context.bot, update.effective_chat.id, 200, services), daemon=True).start()
+        
+        await update.message.reply_text(f"✅ Combo received! {valid_count} valid lines.\n\nChecking will start automatically with **200 threads**...")
+        
+        # Default 200 threads - user ko select nahi karna padega
+        threading.Thread(
+            target=run_checker, 
+            args=(context.bot, update.effective_chat.id, 200, services), 
+            daemon=True
+        ).start()
+        
         return ConversationHandler.END
+    
     await update.message.reply_text("Please send combo as .txt file!")
     return UPLOAD_COMBO
 
