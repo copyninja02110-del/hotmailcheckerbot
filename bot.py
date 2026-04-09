@@ -10,7 +10,7 @@ from checker import HotmailChecker
 
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
-    print("❌ TOKEN set nahi hai! Railway Variables mein TOKEN daal do.")
+    print("❌ TOKEN is not set! Add it in Railway Variables.")
     sys.exit(1)
 
 print("✅ Token loaded! Bot starting...")
@@ -93,7 +93,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "start_checking":
         if not selected:
-            await query.edit_message_text("❌ Pehle Keywords select karo!", reply_markup=main_menu_keyboard())
+            await query.edit_message_text("❌ Please select keywords first!", reply_markup=main_menu_keyboard())
             return SELECT_CATEGORY
         await query.edit_message_text("📤 Send your combo file (.txt)")
         return UPLOAD_COMBO
@@ -157,7 +157,7 @@ async def receive_combo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         valid_count = validate_combo("combo.txt")
         selected = user_data.get(update.effective_user.id, {}).get("selected_services", set())
 
-        await update.message.reply_text(f"✅ Combo received! {valid_count} valid lines.\nFull check start ho raha hai...")
+        await update.message.reply_text(f"✅ Combo received! {valid_count} valid lines.\n\nFull check is starting with 200 threads...")
 
         threading.Thread(
             target=run_checker,
@@ -166,7 +166,7 @@ async def receive_combo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ).start()
         return ConversationHandler.END
 
-    await update.message.reply_text("Sirf .txt file bhejo!")
+    await update.message.reply_text("Please send combo as .txt file!")
     return UPLOAD_COMBO
 
 def run_checker(bot, chat_id, threads, full_services, selected_services):

