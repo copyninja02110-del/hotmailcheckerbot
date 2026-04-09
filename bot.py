@@ -1,6 +1,7 @@
 import os
 import sys
 import threading
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 
@@ -14,7 +15,6 @@ if not TOKEN:
 
 print("✅ Token loaded! Bot starting...")
 
-# ================== CATEGORIES FOR KEYWORDS ==================
 CATEGORIES = {
     "Gaming": ["Steam", "Xbox", "PlayStation", "Epic Games", "Rockstar", "EA Sports", "Ubisoft", "Blizzard", "Riot Games", "Valorant", "Genshin Impact", "PUBG", "Free Fire", "Mobile Legends", "Call of Duty", "Fortnite", "Roblox", "Minecraft", "Supercell", "Nintendo"],
     "Streaming": ["Netflix", "Spotify", "Twitch", "YouTube", "Disney+", "Hulu", "Amazon Prime"],
@@ -77,7 +77,7 @@ def keywords_keyboard(selected, page=0, per_page=10):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in user_data:
-        user_data[user_id] = {"selected_services": set(), "speed_mode": "Medium"}
+        user_data[user_id] = {"selected_services": set()}
     context.user_data['selected_services'] = user_data[user_id]["selected_services"]
     await update.message.reply_text("🔥 <b>KAKASHI Hotmail Checker</b>\n\nMain Menu:", parse_mode='HTML', reply_markup=main_menu_keyboard())
     return SELECT_CATEGORY
@@ -88,7 +88,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = query.from_user.id
     if user_id not in user_data:
-        user_data[user_id] = {"selected_services": set(), "speed_mode": "Medium"}
+        user_data[user_id] = {"selected_services": set()}
     selected = user_data[user_id]["selected_services"]
 
     if data == "start_checking":
@@ -135,7 +135,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🔥 KAKASHI Hotmail Checker\nMain Menu:", reply_markup=main_menu_keyboard())
 
     else:
-        await query.edit_message_text("🔥 Coming soon... More features added soon!", reply_markup=main_menu_keyboard())
+        await query.edit_message_text("🔥 Coming soon...", reply_markup=main_menu_keyboard())
 
     return SELECT_CATEGORY
 
@@ -155,44 +155,30 @@ async def receive_combo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file = await update.message.document.get_file()
         await file.download_to_drive("combo.txt")
         valid_count = validate_combo("combo.txt")
-        
-        user_id = update.effective_user.id
-        selected = user_data.get(user_id, {}).get("selected_services", set())
-        
-        await update.message.reply_text(
-            f"✅ Combo received! {valid_count} valid lines.\n\n"
-            f"🚀 Checking will start automatically with <b>200 threads</b>...\n"
-            f"Progress bar + hits live yahin dikhega!"
-        )
+        selected = user_data.get(update.effective_user.id, {}).get("selected_services", set())
 
-        # Start checker with selected services
+        await update.message.reply_text(f"✅ Combo received! {valid_count} valid lines.\nFull check start ho raha hai...")
+
         threading.Thread(
             target=run_checker,
             args=(context.bot, update.effective_chat.id, 200, services, selected),
             daemon=True
         ).start()
-        
         return ConversationHandler.END
-    
-    await update.message.reply_text("Please send combo as .txt file!")
+
+    await update.message.reply_text("Sirf .txt file bhejo!")
     return UPLOAD_COMBO
 
 def run_checker(bot, chat_id, threads, full_services, selected_services):
-    # Filter services based on user selection
-    if selected_services:
-        filtered_services = {k: v for k, v in full_services.items() if k in selected_services}
-    else:
-        filtered_services = full_services
-    
-    checker = HotmailChecker(bot, chat_id, filtered_services)
+    checker = HotmailChecker(bot, chat_id, full_services, selected_services)
     checker.run(threads=threads)
 
 def main():
     if not os.path.exists("Accounts"):
         os.makedirs("Accounts")
-    
+
     app = Application.builder().token(TOKEN).build()
-    
+
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
@@ -201,10 +187,10 @@ def main():
         },
         fallbacks=[],
     )
-    
+
     app.add_handler(conv_handler)
     print("🤖 KAKASHI Hotmail Checker is running... Send /start")
-    app.run_polling()
+    asyncio.run(app.run_polling())
 
 if __name__ == "__main__":
     main()
