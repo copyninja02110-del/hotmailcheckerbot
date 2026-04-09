@@ -14,6 +14,16 @@ if not TOKEN:
 
 print("✅ Token loaded! Bot starting...")
 
+# ================== CATEGORIES (Keywords ke liye) ==================
+CATEGORIES = {
+    "Gaming": ["Steam", "Xbox", "PlayStation", "Epic Games", "Rockstar", "EA Sports", "Ubisoft", "Blizzard", "Riot Games", "Valorant", "Genshin Impact", "PUBG", "Free Fire", "Mobile Legends", "Call of Duty", "Fortnite", "Roblox", "Minecraft", "Supercell", "Nintendo"],
+    "Streaming": ["Netflix", "Spotify", "Twitch", "YouTube", "Disney+", "Hulu", "Amazon Prime"],
+    "Shopping": ["Amazon", "eBay", "Shopify", "Etsy", "AliExpress"],
+    "Payment & Finance": ["PayPal", "Binance", "Coinbase"],
+    "Social Media": ["Facebook", "Instagram", "TikTok", "Twitter"],
+    "Messaging": ["WhatsApp", "Telegram", "Discord"]
+}
+
 user_data = {}
 SELECT_CATEGORY, UPLOAD_COMBO, ENTER_THREADS = range(3)
 
@@ -146,6 +156,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return SELECT_CATEGORY
 
+def validate_combo(file_path):
+    valid = []
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if ":" in line and "@" in line.split(":", 1)[0]:
+                valid.append(line)
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(valid) + "\n")
+    return len(valid)
+
 async def receive_combo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.document:
         file = await update.message.document.get_file()
@@ -171,17 +192,6 @@ async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Valid number (1-1000) bhejo. Default 200 use kar raha hoon.")
         threading.Thread(target=run_checker, args=(context.bot, update.effective_chat.id, 200, services), daemon=True).start()
         return ConversationHandler.END
-
-def validate_combo(file_path):
-    valid = []
-    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line = line.strip()
-            if ":" in line and "@" in line.split(":", 1)[0]:
-                valid.append(line)
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(valid) + "\n")
-    return len(valid)
 
 def run_checker(bot, chat_id, threads, services):
     checker = HotmailChecker(bot, chat_id, services)
