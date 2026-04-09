@@ -28,9 +28,9 @@ class HotmailChecker:
         self.progress_message_id = None
 
     def send_message(self, text, parse_mode='HTML'):
-        """Thread-safe message sender"""
+        """Thread-safe message sender for Railway"""
         try:
-            loop = asyncio.get_running_loop()
+            loop = asyncio.get_event_loop()
             future = asyncio.run_coroutine_threadsafe(
                 self.bot.send_message(chat_id=self.chat_id, text=text, parse_mode=parse_mode),
                 loop
@@ -63,16 +63,21 @@ class HotmailChecker:
 """
             try:
                 if self.progress_message_id:
-                    loop = asyncio.get_running_loop()
+                    loop = asyncio.get_event_loop()
                     future = asyncio.run_coroutine_threadsafe(
-                        self.bot.edit_message_text(chat_id=self.chat_id, message_id=self.progress_message_id, text=msg, parse_mode='HTML'),
+                        self.bot.edit_message_text(
+                            chat_id=self.chat_id,
+                            message_id=self.progress_message_id,
+                            text=msg,
+                            parse_mode='HTML'
+                        ),
                         loop
                     )
                     future.result(timeout=10)
                 else:
                     sent = self.bot.send_message(chat_id=self.chat_id, text=msg, parse_mode='HTML')
                     self.progress_message_id = sent.message_id
-                    print(f"[INFO] Progress message created with ID: {self.progress_message_id}")
+                    print(f"[INFO] Progress message ID: {self.progress_message_id}")
             except Exception as e:
                 print(f"[Progress Error] {e}")
             time.sleep(5)
