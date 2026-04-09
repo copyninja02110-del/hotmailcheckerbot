@@ -14,7 +14,6 @@ if not TOKEN:
 
 print("✅ Token loaded! Bot starting...")
 
-# ================== CATEGORIES (Keywords ke liye) ==================
 CATEGORIES = {
     "Gaming": ["Steam", "Xbox", "PlayStation", "Epic Games", "Rockstar", "EA Sports", "Ubisoft", "Blizzard", "Riot Games", "Valorant", "Genshin Impact", "PUBG", "Free Fire", "Mobile Legends", "Call of Duty", "Fortnite", "Roblox", "Minecraft", "Supercell", "Nintendo"],
     "Streaming": ["Netflix", "Spotify", "Twitch", "YouTube", "Disney+", "Hulu", "Amazon Prime"],
@@ -134,23 +133,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back_to_main":
         await query.edit_message_text("🔥 Hotmail Checker Main Menu", reply_markup=main_menu_keyboard())
 
-    elif data == "menu_speed":
-        keyboard = [
-            [InlineKeyboardButton("🐢 Slow", callback_data="speed_Slow")],
-            [InlineKeyboardButton("⚡ Medium (Recommended)", callback_data="speed_Medium")],
-            [InlineKeyboardButton("🚀 Fast", callback_data="speed_Fast")],
-            [InlineKeyboardButton("🔥 Turbo", callback_data="speed_Turbo")],
-            [InlineKeyboardButton("🧠 Deep Scan", callback_data="speed_Deep Scan")],
-            [InlineKeyboardButton("💎 VIP+ Ultra", callback_data="speed_VIP+ Ultra")]
-        ]
-        await query.edit_message_text("⚡ Choose Speed Mode:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif data.startswith("speed_"):
-        mode = data[6:]
-        user_data[user_id]["speed_mode"] = mode
-        await query.edit_message_text(f"✅ Speed set to {mode}!", reply_markup=main_menu_keyboard())
-        return SELECT_CATEGORY
-
     else:
         await query.edit_message_text("🔥 Coming soon... More features added soon!", reply_markup=main_menu_keyboard())
 
@@ -173,25 +155,12 @@ async def receive_combo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await file.download_to_drive("combo.txt")
         valid_count = validate_combo("combo.txt")
         context.user_data['combo_file'] = "combo.txt"
-        await update.message.reply_text(f"✅ Combo received! {valid_count} valid lines.\n\nSend threads number (20-500 recommended):")
-        return ENTER_THREADS
-    await update.message.reply_text("Please send combo as .txt file!")
-    return UPLOAD_COMBO
-
-async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        threads = int(update.message.text.strip())
-        if not 1 <= threads <= 1000:
-            threads = 200
-        context.user_data['threads'] = threads
-        await update.message.reply_text(f"🚀 Added to Queue! Position #1\nScanning will start automatically with {threads} threads...")
-
-        threading.Thread(target=run_checker, args=(context.bot, update.effective_chat.id, threads, services), daemon=True).start()
-        return ConversationHandler.END
-    except:
-        await update.message.reply_text("❌ Valid number (1-1000) bhejo. Default 200 use kar raha hoon.")
+        await update.message.reply_text(f"✅ Combo received! {valid_count} valid lines.\n\nChecking will start automatically with 200 threads...")
+        # Default 200 threads — user ko select nahi karne denge
         threading.Thread(target=run_checker, args=(context.bot, update.effective_chat.id, 200, services), daemon=True).start()
         return ConversationHandler.END
+    await update.message.reply_text("Please send combo as .txt file!")
+    return UPLOAD_COMBO
 
 def run_checker(bot, chat_id, threads, services):
     checker = HotmailChecker(bot, chat_id, services)
@@ -208,7 +177,6 @@ def main():
         states={
             SELECT_CATEGORY: [CallbackQueryHandler(button_handler)],
             UPLOAD_COMBO: [MessageHandler(filters.Document.ALL, receive_combo)],
-            ENTER_THREADS: [MessageHandler(filters.TEXT, receive_threads)],
         },
         fallbacks=[],
     )
