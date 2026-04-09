@@ -5,7 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 
 from services import services
-from checker import run_checker, validate_combo, main_menu_keyboard, keywords_keyboard
+from checker import HotmailChecker
 
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
@@ -16,6 +16,53 @@ print("✅ Token loaded! Bot starting...")
 
 user_data = {}
 SELECT_CATEGORY, UPLOAD_COMBO, ENTER_THREADS = range(3)
+
+def main_menu_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("🚀 Start Checking", callback_data="start_checking")],
+        [InlineKeyboardButton("🔑 Keywords", callback_data="menu_keywords"), InlineKeyboardButton("⚡ Speed", callback_data="menu_speed")],
+        [InlineKeyboardButton("📊 Stats Menu", callback_data="menu_stats"), InlineKeyboardButton("🎯 My Hits", callback_data="menu_hits")],
+        [InlineKeyboardButton("👤 My Profile", callback_data="menu_profile"), InlineKeyboardButton("🏆 Leaderboard", callback_data="menu_leaderboard")],
+        [InlineKeyboardButton("🌍 Global", callback_data="menu_global")],
+        [InlineKeyboardButton("📈 Live Stats", callback_data="menu_livestats"), InlineKeyboardButton("📋 Queue (0)", callback_data="menu_queue")],
+        [InlineKeyboardButton("🔴 Live Activity", callback_data="menu_activity")],
+        [InlineKeyboardButton("🎁 Loot Box", callback_data="menu_loot"), InlineKeyboardButton("🔄 Referral", callback_data="menu_referral")],
+        [InlineKeyboardButton("🛒 Market", callback_data="menu_market")],
+        [InlineKeyboardButton("🌐 Language", callback_data="menu_language"), InlineKeyboardButton("🛠 Tools", callback_data="menu_tools")],
+        [InlineKeyboardButton("💎 Buy VIP", callback_data="menu_vip")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def keywords_keyboard(selected, page=0, per_page=10):
+    all_services = []
+    for cat_services in CATEGORIES.values():
+        all_services.extend(cat_services)
+    all_services = sorted(set(all_services))
+    start = page * per_page
+    end = start + per_page
+    current_page = all_services[start:end]
+
+    keyboard = []
+    for srv in current_page:
+        status = "✅" if srv in selected else "⬜"
+        keyboard.append([InlineKeyboardButton(f"{status} {srv}", callback_data=f"svc_{srv}")])
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"page_{page-1}"))
+    if end < len(all_services):
+        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"page_{page+1}"))
+    if nav:
+        keyboard.append(nav)
+
+    keyboard.append([
+        InlineKeyboardButton("✅ Select All", callback_data="select_all_keywords"),
+        InlineKeyboardButton("❌ Deselect All", callback_data="deselect_all_keywords")
+    ])
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_main")])
+    keyboard.append([InlineKeyboardButton("✅ Done", callback_data="done_keywords")])
+
+    return InlineKeyboardMarkup(keyboard)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -45,7 +92,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["current_page"] = 0
         await query.edit_message_text("🔑 Keywords - Page 1/5\nSelect services:", reply_markup=keywords_keyboard(selected, 0))
 
-    # ... (baaki button logic same as before)
+    elif data.startswith("page_"):
+        page = int(data[5:])
+        context.user_data["current_page"] = page
+        await query.edit_message_text(f"🔑 Keywords - Page {page+1}/5\nSelect services:", reply_markup=keywords_keyboard(selected, page))
+
+    elif data.startswith("svc_"):
+        service = data[4:]
+        if service in selected:
+            selected.remove(service)
+        else:
+            selected.add(service)
+        page = context.user_data.get("current_page", 0)
+        await query.edit_message_text(f"🔑 Keywords - Page {page+1}/5\nSelect services:", reply_markup=keywords_keyboard(selected, page))
+
+    elif data == "select_all_keywords":
+        for cat in CATEGORIES.values():
+            selected.update(cat)
+        page = context.user_data.get("current_page", 0)
+        await query.edit_message_text(f"🔑 Keywords - Page {page+1}/5\nSelect services:", reply_markup=keywords_keyboard(selected, page))
+
+    elif data == "deselect_all_keywords":
+        selected.clear()
+        page = context.user_data.get("current_page", 0)
+        await query.edit_message_text(f"🔑 Keywords - Page {page+1}/5\nSelect services:", reply_markup=keywords_keyboard(selected, page))
 
     elif data == "done_keywords":
         await query.edit_message_text("✅ Keywords saved! Back to Main Menu", reply_markup=main_menu_keyboard())
@@ -82,7 +152,7 @@ async def receive_combo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await file.download_to_drive("combo.txt")
         valid_count = validate_combo("combo.txt")
         context.user_data['combo_file'] = "combo.txt"
-        await update.message.reply_text(f"✅ Combo received! {valid_count} valid lines.\n\nSend threads number (20-500 recommended, default 200):")
+        await update.message.reply_text(f"✅ Combo received! {valid_count} valid lines.\n\nSend threads number (20-500 recommended):")
         return ENTER_THREADS
     await update.message.reply_text("Please send combo as .txt file!")
     return UPLOAD_COMBO
@@ -91,7 +161,7 @@ async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         threads = int(update.message.text.strip())
         if not 1 <= threads <= 1000:
-            threads = 200  # default 200 threads
+            threads = 200
         context.user_data['threads'] = threads
         await update.message.reply_text(f"🚀 Added to Queue! Position #1\nScanning will start automatically with {threads} threads...")
 
@@ -99,9 +169,23 @@ async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     except:
         await update.message.reply_text("❌ Valid number (1-1000) bhejo. Default 200 use kar raha hoon.")
-        context.user_data['threads'] = 200
         threading.Thread(target=run_checker, args=(context.bot, update.effective_chat.id, 200, services), daemon=True).start()
         return ConversationHandler.END
+
+def validate_combo(file_path):
+    valid = []
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if ":" in line and "@" in line.split(":", 1)[0]:
+                valid.append(line)
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(valid) + "\n")
+    return len(valid)
+
+def run_checker(bot, chat_id, threads, services):
+    checker = HotmailChecker(bot, chat_id, services)
+    checker.run(threads=threads)
 
 def main():
     if not os.path.exists("Accounts"):
