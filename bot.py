@@ -5,8 +5,7 @@ import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, ConversationHandler
 
-from services import services
-from checker import HotmailChecker
+from checker import HotmailChecker  # services ab checker.py mein hi hai
 
 TOKEN = os.getenv("TOKEN")
 if not TOKEN:
@@ -161,7 +160,7 @@ async def receive_combo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         threading.Thread(
             target=run_checker,
-            args=(context.bot, update.effective_chat.id, 200, services, selected),
+            args=(context.bot, update.effective_chat.id, 200, selected),
             daemon=True
         ).start()
         return ConversationHandler.END
@@ -169,8 +168,8 @@ async def receive_combo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Please send combo as .txt file!")
     return UPLOAD_COMBO
 
-def run_checker(bot, chat_id, threads, full_services, selected_services):
-    checker = HotmailChecker(bot, chat_id, full_services, selected_services)
+def run_checker(bot, chat_id, threads, selected_services):
+    checker = HotmailChecker(bot, chat_id, selected_services)
     checker.run(threads=threads)
 
 def main():
