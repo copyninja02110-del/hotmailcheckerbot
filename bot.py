@@ -17,11 +17,11 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 from services import services
 
 TOKEN = os.getenv("TOKEN")
-if not TOKEN or TOKEN == "YOUR_TELEGRAM_BOT_TOKEN_HERE":
-    print("❌ TOKEN set nahi hai! Railway Variables mein TOKEN daal do.")
+if not TOKEN:
+    print("❌ TOKEN set nahi hai!")
     sys.exit(1)
 
-print("✅ Token loaded! Video style bot starting...")
+print("✅ Token loaded! Bot starting...")
 
 lock = threading.Lock()
 hit = bad = retry = processed = total_combos = 0
@@ -50,18 +50,13 @@ def create_progress_bar(percentage, length=25):
 
 def send_message_safe(bot, chat_id, text, parse_mode='HTML'):
     try:
-        loop = asyncio.get_event_loop()
-        future = asyncio.run_coroutine_threadsafe(
-            bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode),
-            loop
-        )
-        future.result(timeout=10)
+        bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
     except Exception as e:
-        print(f"[ERROR] Send message failed: {e}")
+        print(f"Send message error: {e}")
 
 def update_progress_message(bot, chat_id):
     global progress_message_id
-    print("[INFO] Progress bar thread started")
+    print("[INFO] Progress thread started")
     while processed < total_combos and total_combos > 0:
         with lock:
             pct = min((processed / total_combos * 100), 100)
@@ -78,21 +73,12 @@ def update_progress_message(bot, chat_id):
 🔗 LINKED: {linked}
 """
         try:
-            loop = asyncio.get_event_loop()
             if progress_message_id:
-                future = asyncio.run_coroutine_threadsafe(
-                    bot.edit_message_text(chat_id=chat_id, message_id=progress_message_id, text=msg, parse_mode='HTML'),
-                    loop
-                )
-                future.result(timeout=10)
+                bot.edit_message_text(chat_id=chat_id, message_id=progress_message_id, text=msg, parse_mode='HTML')
             else:
-                future = asyncio.run_coroutine_threadsafe(
-                    bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML'),
-                    loop
-                )
-                sent = future.result(timeout=10)
+                sent = bot.send_message(chat_id=chat_id, text=msg, parse_mode='HTML')
                 progress_message_id = sent.message_id
-                print(f"[INFO] Progress message created with ID: {progress_message_id}")
+                print(f"[INFO] Progress message ID: {progress_message_id}")
         except Exception as e:
             print(f"[ERROR] Progress update failed: {e}")
         time.sleep(5)
@@ -392,7 +378,7 @@ async def receive_threads(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['threads'] = threads
         await update.message.reply_text(f"🚀 Added to Queue! Position #1\nScanning will start automatically...")
 
-        print(f"[INFO] Starting checker thread with {threads} threads")
+        print(f"[INFO] Starting checker with {threads} threads")
         threading.Thread(target=run_checker, args=(context.bot, update.effective_chat.id, threads), daemon=True).start()
         return ConversationHandler.END
     except:
@@ -416,6 +402,7 @@ def run_checker(bot, chat_id, threads):
     progress_thread = threading.Thread(target=update_progress_message, args=(bot, chat_id), daemon=True)
     progress_thread.start()
 
+    print(f"[INFO] Starting {threads} worker threads")
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
         for line in lines:
             try:
@@ -445,7 +432,7 @@ def main():
     )
     
     app.add_handler(conv_handler)
-    print("🤖 KAKASHI Hotmail Checker (FINAL FIXED) is running... Send /start")
+    print("🤖 KAKASHI Hotmail Checker is running... Send /start")
     app.run_polling()
 
 if __name__ == "__main__":
